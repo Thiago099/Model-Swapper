@@ -1,0 +1,11 @@
+set(HEADER_FILES
+	include/PCH.h
+	include/logger.h
+	include/Plugin.h
+	include/HookBuilder.h
+	include/Hooks.h
+	include/Manager.h
+	include/Str.h
+	include/Wrapper.h
+	include/TimeClass.h
+)
