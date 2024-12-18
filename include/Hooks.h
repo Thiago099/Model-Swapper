@@ -65,6 +65,16 @@ namespace Hooks {
             if (ref) {
                 if (auto obj = ref->GetBaseObject()) {
                     if (auto npc = obj->As<RE::TESNPC>()) {
+                        
+                        if (auto race = npc->race) {
+                            if (auto raceSkin = race->skin) {
+                                for (auto addon : raceSkin->armorAddons) {
+                                    auto manager = Manager::GetSingleton();
+                                    manager->Process(addon, ref->GetFormID());
+                                }
+                            }
+                        }
+
                         if (auto skin = npc->skin) {
                             for (auto addon : skin->armorAddons) {
                                 auto manager = Manager::GetSingleton();
