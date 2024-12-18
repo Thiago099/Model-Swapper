@@ -15,21 +15,19 @@ using models = std::map<std::string, variants>;
 class AVObject {
 public:
     virtual void Reset() = 0;
-    virtual void Match(models models, int variant) = 0;
+    virtual const variant* Match(models models, int variant) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
 
-inline variant* find(models& models, const char* str, uint32_t seed) {
-    auto key = Str::processString(str);
-    auto it = models.find(key);
-    if (it != models.end()) {
+inline variant* find(models& models, const char* str, const uint32_t seed) {
+    const auto key = Str::processString(str);
+    if (const auto it = models.find(key); it != models.end()) {
         std::mt19937 engine(seed);
         std::uniform_int_distribution<uint32_t> dist(0, it->second.size() - 1);
-        uint32_t random_number = dist(engine);
-        if (random_number < it->second.size()) {
+        if (const uint32_t random_number = dist(engine); random_number < it->second.size()) {
 
-            auto result = it->second.at(random_number);
-            auto config = Config::GetSingleton();
+            const auto result = it->second.at(random_number);
+            const auto config = Config::GetSingleton();
 
             if (config->BypassTemporalActivation) {
                 return result;
@@ -111,28 +109,29 @@ public:
         return func(src, &a2, &a3);
     }
 
-    void Match(models models, int variant) override {
+    const variant* Match(models models, const int variant) override {
         if (!base) {
-            return;
+			return nullptr;
         }
 
         if (base->bipedModels) {
-            if (auto item = find(models, initialMaleThirdPersonModle, variant)) {
+            if (const auto item = find(models, initialMaleThirdPersonModle, variant)) {
                 base->bipedModels[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (auto item = find(models, initialFemaleThirdPersonModle, variant)) {
+            if (const auto item = find(models, initialFemaleThirdPersonModle, variant)) {
                 base->bipedModels[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
         if (base->bipedModel1stPersons) {
 
-            if (auto item = find(models, initialMaleFirstPersonModle, variant)) {
+            if (const auto item = find(models, initialMaleFirstPersonModle, variant)) {
                 base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (auto item = find(models, initialFemaleFirstPersonModel, variant)) {
+            if (const auto item = find(models, initialFemaleFirstPersonModel, variant)) {
                 base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
+		return nullptr; // for now we don't need to return anything with NPCs
     }
 };
 
@@ -147,7 +146,7 @@ public:
         if (!base) {
             return;
         }
-        if (auto bm = base->As<RE::TESModel>()) {
+        if (const auto bm = base->As<RE::TESModel>()) {
             model = bm->GetModel();
         }
     }
@@ -160,15 +159,18 @@ public:
         }
     }
 
-    void Match(models models, int variant) override {
+    const variant* Match(models models, const int variant) override {
         if (!base) {
-            return;
+			return nullptr;
         }
-        if (auto bm = base->As<RE::TESModel>()) {
-            if (auto item = find(models, model, variant)) {
+        if (const auto bm = base->As<RE::TESModel>()) {
+            if (const auto item = find(models, model, variant)) {
                 bm->SetModel(item->model);
+				logger::info("Applied model {}", item->model);
+				return item;
             }
 
         }
+		return nullptr;
     }
 };

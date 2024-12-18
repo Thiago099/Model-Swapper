@@ -6,8 +6,6 @@ const std::string directory = "Data/";
 
 
 void EachConfigFile(std::function<void(std::string, json)> callback) {
-    auto manager = Manager::GetSingleton();
-
 
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
         if (entry.is_regular_file() && entry.path().extension() == ".json") {
@@ -24,7 +22,7 @@ void EachConfigFile(std::function<void(std::string, json)> callback) {
 
                     callback(filename, data);
 
-                } catch (const json::parse_error& e) {
+                } catch (const json::parse_error&) {
                 }
             }
         }
