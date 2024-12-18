@@ -1,44 +1,4 @@
 #pragma once
-#include <windows.h>
-#include <dbghelp.h>
-#include <psapi.h>
-#include <mutex>
-
-
-inline std::mutex mtx;
-
-inline size_t GetModuleSize(HMODULE module) {
-    MODULEINFO moduleInfo;
-    if (GetModuleInformation(GetCurrentProcess(), module, &moduleInfo, sizeof(moduleInfo))) {
-        return moduleInfo.SizeOfImage;
-    }
-    return 0;
-}
-
-inline bool IsAddressInSkyrimExe(uintptr_t addr) {
-    void* skyrimBase = GetModuleHandle(L"SkyrimSE.exe");
-    if (!skyrimBase) return false;
-
-    size_t skyrimSize = GetModuleSize(static_cast<HMODULE>(skyrimBase));
-    uintptr_t baseAddr = reinterpret_cast<uintptr_t>(skyrimBase);
-
-    return addr >= baseAddr && addr < (baseAddr + skyrimSize);
-}
-
-inline void PrintStackTrace() {
-    void* skyrimSEBase = GetModuleHandle(L"SkyrimSE.exe");
-    auto skyrimAddress = reinterpret_cast<uintptr_t>(skyrimSEBase);
-    const int maxFrames = 64;
-    void* stack[maxFrames];
-    unsigned short frames = CaptureStackBackTrace(0, maxFrames, stack, NULL);
-
-    for (unsigned short i = 0; i < frames; ++i) {
-        auto currentAddress = reinterpret_cast<uintptr_t>(stack[i]);
-        if (IsAddressInSkyrimExe(currentAddress)) {
-            logger::trace("{:x}", 0x140000000 + currentAddress - skyrimAddress);
-        }
-    }
-}
 
 namespace Hooks {
 
