@@ -109,29 +109,36 @@ public:
         return func(src, &a2, &a3);
     }
 
-    const variant* Match(models models, const int variant) override {
+    const variant* Match(models models, const int _variant) override {
+
+        variant* result = nullptr;
+
         if (!base) {
 			return nullptr;
         }
 
         if (base->bipedModels) {
-            if (const auto item = find(models, initialMaleThirdPersonModle, variant)) {
+            if (const auto item = find(models, initialMaleThirdPersonModle, _variant)) {
+                result = item;
                 base->bipedModels[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (const auto item = find(models, initialFemaleThirdPersonModle, variant)) {
+            if (const auto item = find(models, initialFemaleThirdPersonModle, _variant)) {
+                result = item;
                 base->bipedModels[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
         if (base->bipedModel1stPersons) {
 
-            if (const auto item = find(models, initialMaleFirstPersonModle, variant)) {
+            if (const auto item = find(models, initialMaleFirstPersonModle, _variant)) {
+                result = item;
                 base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (const auto item = find(models, initialFemaleFirstPersonModel, variant)) {
+            if (const auto item = find(models, initialFemaleFirstPersonModel, _variant)) {
+                result = item;
                 base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
-		return nullptr; // for now we don't need to return anything with NPCs
+        return result;  // for now we don't need to return anything with NPCs
     }
 };
 
