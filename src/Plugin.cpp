@@ -1,5 +1,4 @@
 #include "Plugin.h"
-#include "HookBuilder.h"
 
 void OnMessage(SKSE::MessagingInterface::Message* message) {
     if (message->type == SKSE::MessagingInterface::kDataLoaded) {
@@ -25,7 +24,6 @@ SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     SetupLog();
     logger::info("Plugin loaded");
     Hooks::Install();
-    HookBuilder::GetSingleton()->Install();
     Persistence::Install();
     return true;
 }
