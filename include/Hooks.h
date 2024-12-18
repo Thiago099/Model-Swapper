@@ -35,18 +35,18 @@ namespace Hooks {
     };
 
 
-    class player_hook {
+    class PlayerHook {
     public:
         static void install();
     private:
-        static void pick_up_object(RE::Actor* a_this,
+        static void pickUpObject(RE::Actor* a_this,
                                    RE::TESObjectREFR* a_object,
                                    uint32_t a_count,
                                    bool a_arg3,
                                    bool a_play_sound);
-        static inline REL::Relocation<decltype(pick_up_object)> pick_up_object_;
+        static inline REL::Relocation<decltype(pickUpObject)> pick_up_object_;
 
-        static RE::ObjectRefHandle remove_item(RE::Actor* a_this,
+        static RE::ObjectRefHandle RemoveItem(RE::Actor* a_this,
             RE::TESBoundObject* a_item,
             std::int32_t a_count,
             RE::ITEM_REMOVE_REASON a_reason,
@@ -54,7 +54,7 @@ namespace Hooks {
             RE::TESObjectREFR* a_move_to_ref,
             const RE::NiPoint3* a_drop_loc,
             const RE::NiPoint3* a_rotate);
-        static inline REL::Relocation<decltype(remove_item)> remove_item_;
+        static inline REL::Relocation<decltype(RemoveItem)> remove_item_;
     };
 
     
@@ -63,6 +63,6 @@ namespace Hooks {
         NpcSkinHook::Install();
         ReplaceTextureOnObjectsHook::Install();
 		InventoryHoverHook::Install();
-		player_hook::install();
+		PlayerHook::install();
     }
 }
