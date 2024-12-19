@@ -3,4 +3,5 @@ set(SOURCE_FILES
 	src/Manager.cpp
 	src/Persistence.cpp
 	src/Hooks.cpp
+	src/SaveLoadManager.cpp
 )

@@ -7,4 +7,5 @@ set(HEADER_FILES
 	include/Str.h
 	include/Wrapper.h
 	include/TimeClass.h
+	include/SaveLoadManager.h
 )

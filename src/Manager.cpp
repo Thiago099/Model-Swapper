@@ -1,5 +1,36 @@
 #include "Manager.h"
 
+ManagerSaveGameData& Manager::GetCurrentSaveGameData() {
+	return saveGameData[lastSave];
+}
+
+void Manager::PreLoadGame() {
+    auto saveLoadManager = RE::SaveLoadManager::GetSingleton();
+    auto newSave = Str::CopySaveFileNameWtihotExtension(saveLoadManager->lastFileFullName);
+
+    logger::trace("new: {}", newSave);
+
+    delete lastSave;
+    lastSave = newSave;
+}
+
+void Manager::SaveGame() {
+    auto saveLoadManager = RE::SaveLoadManager ::GetSingleton();
+    auto newSave = Str::CopySaveFileNameWtihotExtension(saveLoadManager->lastFileFullName);
+
+    logger::trace("last: {}", newSave);
+    logger::trace("new: {}", lastSave);
+
+    if (!lastSave) {
+        lastSave = newSave;
+    } else if (!Str::Equal(lastSave, newSave)) {
+        auto& currentData = GetCurrentSaveGameData();
+        saveGameData[newSave] = ManagerSaveGameData(currentData);
+        delete lastSave;
+        lastSave = newSave;
+    }
+}
+
 void Manager::Register(std::string key, variants value) {
     key = Str::processString(key);
 
@@ -18,7 +49,7 @@ void Manager::Process(RE::TESBoundObject* base, const RefID id) {
     const auto wrapper = new AVModel(base);
     if (const auto variant = Process(wrapper, id)) {
 	    std::unique_lock lock(applied_variants_mutex_);
-	    applied_variants[id] = variant;
+        GetCurrentSaveGameData().applied_variants[id] = variant;
     }
     delete wrapper;
 }
@@ -44,15 +75,16 @@ void Manager::UpdateStackOnPickUp(const RE::TESObjectREFR* a_owner, RE::TESObjec
 	std::unique_lock lock(inventory_stacks_mutex_);
     while (a_count>0) {
 		logger::info("Add.Owner: {} {:x}, Item: {:x}", a_owner->GetName(),a_owner->GetFormID(), a_obj->GetFormID());
-	    inventory_stacks[a_owner->GetFormID()][base->GetFormID()].push_back(variant);
+        GetCurrentSaveGameData().inventory_stacks[a_owner->GetFormID()][base->GetFormID()].push_back(variant);
 		a_count--;
     }
-	for (const auto& item : inventory_stacks[a_owner->GetFormID()][base->GetFormID()]) {
+    for (const auto& item : GetCurrentSaveGameData().inventory_stacks[a_owner->GetFormID()][base->GetFormID()]) {
 		if (item && item->model) logger::info("Stack: {}", item->model);
 	}
 
-	if (std::unique_lock lock2(applied_variants_mutex_); applied_variants.contains(a_obj->GetFormID())) {
-		applied_variants.erase(a_obj->GetFormID());
+	if (std::unique_lock lock2(applied_variants_mutex_);
+        GetCurrentSaveGameData().applied_variants.contains(a_obj->GetFormID())) {
+        GetCurrentSaveGameData().applied_variants.erase(a_obj->GetFormID());
 	}
 }
 
@@ -61,9 +93,10 @@ void Manager::UpdateStackOnDrop(const RE::TESObjectREFR* a_owner, const RE::TESB
 	std::unique_lock lock1(inventory_stacks_mutex_);
     while (a_count>0) {
 		logger::info("Remove. Owner: {} {:x}, Item: {:x}", a_owner->GetName(),a_owner->GetFormID(), a_obj->GetFormID());
-		if (inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].size() > 0) {
-			inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].pop_back();
-			logger::info("Stack size: {}", inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].size());
+        if (GetCurrentSaveGameData().inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].size() > 0) {
+            GetCurrentSaveGameData().inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].pop_back();
+            logger::info("Stack size: {}",
+                         GetCurrentSaveGameData().inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].size());
 			a_count--;
         }
         else break;
@@ -73,7 +106,8 @@ void Manager::UpdateStackOnDrop(const RE::TESObjectREFR* a_owner, const RE::TESB
 const variant* Manager::GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item)
 {
 	std::shared_lock lock(inventory_stacks_mutex_);
-	if (const auto it = inventory_stacks.find(a_owner->GetFormID()); it != inventory_stacks.end()) {
+    if (const auto it = GetCurrentSaveGameData().inventory_stacks.find(a_owner->GetFormID());
+        it != GetCurrentSaveGameData().inventory_stacks.end()) {
 		if (const auto it2 = it->second.find(a_item->GetFormID()); it2 != it->second.end()) {
 			if (it2->second.size() > 0) {
 				return it2->second.back();
@@ -105,7 +139,8 @@ void Manager::SetInventoryBaseModel(RE::InventoryEntryData* a_entry)
 const variant* Manager::GetAppliedVariant(const RefID id)
 {
 	std::shared_lock lock(applied_variants_mutex_);
-	if (const auto it = applied_variants.find(id); it != applied_variants.end()) {
+    if (const auto it = GetCurrentSaveGameData().applied_variants.find(id);
+        it != GetCurrentSaveGameData().applied_variants.end()) {
 		return it->second;
 	}
 	return nullptr;
@@ -116,20 +151,20 @@ void Manager::ApplyVariant(RE::TESBoundObject* base,RefID id, const variant* a_v
 	if (const auto bm = base->As<RE::TESModel>()) {
         bm->SetModel(a_variant->model);
         std::unique_lock lock(applied_variants_mutex_);
-        applied_variants[id] = a_variant;
+        GetCurrentSaveGameData().applied_variants[id] = a_variant;
 	}
 }
 
 void Manager::AddToQueue(const variant* a_variant)
 {
 	std::unique_lock lock(queue_mutex_);
-	variants_queue.push_back(a_variant);
+    GetCurrentSaveGameData().variants_queue.push_back(a_variant);
 }
 
 bool Manager::HasVariant(RefID refid)
 {
 	std::shared_lock lock(applied_variants_mutex_);
-	if (applied_variants.contains(refid)) {
+    if (GetCurrentSaveGameData().applied_variants.contains(refid)) {
 		return true;
 	}
 	return false;
@@ -138,11 +173,11 @@ bool Manager::HasVariant(RefID refid)
 const variant* Manager::FetchFromQueue()
 {
 	std::unique_lock lock(queue_mutex_);
-	if (variants_queue.empty()) {
+    if (GetCurrentSaveGameData().variants_queue.empty()) {
 		return nullptr;
 	}
-	const variant* result = variants_queue.front();
-	variants_queue.erase(variants_queue.begin());
+    const variant* result = GetCurrentSaveGameData().variants_queue.front();
+    GetCurrentSaveGameData().variants_queue.erase(GetCurrentSaveGameData().variants_queue.begin());
     return result;
 }
 

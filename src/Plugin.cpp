@@ -3,6 +3,14 @@
 void OnMessage(SKSE::MessagingInterface::Message* message) {
     if (message->type == SKSE::MessagingInterface::kDataLoaded) {
     }
+
+    auto manager = Manager::GetSingleton();
+    if (message->type == SKSE::MessagingInterface::kSaveGame) {
+        manager->SaveGame();
+    }
+    if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
+        manager->PreLoadGame();
+    }
     if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
         //auto form = RE::TESForm::LookupByID<RE::TESObjectMISC>(0x5ACE4);
         //auto player = RE::PlayerCharacter::GetSingleton();
