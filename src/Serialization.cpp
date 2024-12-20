@@ -4,7 +4,7 @@
 
 
 void Serialization::saveDataBinary(const Data& data, const std::string& filename) {
-    std::ofstream ofs(filename, std::ios::binary);
+    std::ofstream ofs(filename + ".bin", std::ios::binary);
     if (!ofs) {
         throw std::runtime_error("Failed to open file for writing: " + filename);
     }
@@ -14,7 +14,7 @@ void Serialization::saveDataBinary(const Data& data, const std::string& filename
 }
 
 void Serialization::loadDataBinary(Data& data, const std::string& filename) {
-	std::ifstream ifs(filename, std::ios::binary);
+    std::ifstream ifs(filename + ".bin", std::ios::binary);
     if (!ifs) {
         throw std::runtime_error("Failed to open file for reading: " + filename);
     }
