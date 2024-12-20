@@ -28,10 +28,22 @@ int64_t Hooks::InventoryHoverHook::thunk(RE::InventoryEntryData* a1) {
     #undef GetObject
     if (const auto ui = RE::UI::GetSingleton(); ui && a1) {
         if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
-			Manager::SetInventoryBaseModel(a1);
+			Manager::SetInventoryBaseModel(RE::PlayerCharacter::GetSingleton(), a1);
         }
         else if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
-            // TODO: Container Menu
+           
+            if (auto cm = ui->GetMenu<RE::ContainerMenu>()) {
+                if (auto items= cm->GetRuntimeData().itemList) {
+                    if (auto selected = items->GetSelectedItem()) {
+                        auto & data = selected->data;
+                        auto owner = RE::TESObjectREFR::LookupByHandle(data.owner).get();
+                        if (owner) {
+                            logger::trace("owner: {}", owner->GetName());
+                        }
+                        Manager::SetInventoryBaseModel(owner, a1);
+                    }
+                }
+            }
         }
     }
     return originalFunction(a1);
@@ -68,7 +80,6 @@ void Hooks::PlayerHook::install()
 {
 	REL::Relocation<std::uintptr_t> player_character_vtbl{ RE::VTABLE_PlayerCharacter[0] };
     pick_up_object_ = player_character_vtbl.write_vfunc(0xCC, pickUpObject);
-    remove_item_ = player_character_vtbl.write_vfunc(0x56, RemoveItem);
 }
 
 void Hooks::PlayerHook::pickUpObject(RE::Actor* a_this, RE::TESObjectREFR* a_object, int32_t a_count, bool a_arg3, bool a_play_sound)
@@ -79,19 +90,7 @@ void Hooks::PlayerHook::pickUpObject(RE::Actor* a_this, RE::TESObjectREFR* a_obj
     pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 }
 
-RE::ObjectRefHandle Hooks::PlayerHook::RemoveItem(RE::Actor* a_this, RE::TESBoundObject* a_item, std::int32_t a_count, RE::ITEM_REMOVE_REASON a_reason, RE::ExtraDataList* a_extra_list, RE::TESObjectREFR* a_move_to_ref, const RE::NiPoint3* a_drop_loc, const RE::NiPoint3* a_rotate)
-{
-	const auto manager = Manager::GetSingleton();
-	if (a_this && a_item && a_item->IsInventoryObject() && a_count > 0) {
-	    if (const auto variant = manager->GetInventoryModel(RE::PlayerCharacter::GetSingleton(), a_item)) {
-            manager->AddToQueue(a_item->GetFormID(), variant);
-		    logger::info("Added to queue");
-	    }
-		Manager::GetSingleton()->UpdateStackOnDrop(RE::PlayerCharacter::GetSingleton(),a_item,a_count);
-	}
 
-	return remove_item_(a_this, a_item, a_count, a_reason, a_extra_list, a_move_to_ref, a_drop_loc, a_rotate);
-}
 
 RE::BSEventNotifyControl Hooks::SaveHook::ProcessEvent(RE::SaveLoadManager* a_this, const RE::BSSaveDataEvent* a_event, RE::BSTEventSource<RE::BSSaveDataEvent>* a_eventSource)
 {
@@ -111,4 +110,38 @@ void Hooks::SaveHook::PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_th
 		Manager::GetSingleton()->SaveGame(a_fileName);
 	}
 	originalFunction2(a_this, a_fileName, a_dst, a_tmpSave, a_ignoreINI);
+}
+
+RE::BSEventNotifyControl Hooks::ContainerChangedEvent::ProcessEvent(const RE::TESContainerChangedEvent* event,
+                                                                    RE::BSTEventSource<RE::TESContainerChangedEvent>*) {
+
+    if (!event) {
+        return RE::BSEventNotifyControl::kContinue;
+    }
+
+    #define tryFind(element, type) element == 0 ? nullptr : RE::TESForm::LookupByID<type>(element)
+
+    RE::TESBoundObject* a_item = tryFind(event->baseObj, RE::TESBoundObject);
+    RE::TESObjectREFR* old_container = tryFind(event->oldContainer, RE::TESObjectREFR);
+    RE::TESObjectREFR* a_move_to_ref = tryFind(event->newContainer, RE::TESObjectREFR);
+
+    int32_t a_count = event->itemCount;
+
+    auto manager = Manager::GetSingleton();
+
+	if (a_item && a_item->IsInventoryObject() && a_count > 0) {
+        if (old_container && a_move_to_ref) {
+            Manager::GetSingleton()->TransferOwnership(old_container, a_move_to_ref, a_item,
+                                                       a_count);
+        }
+        else if (old_container) {
+            if (const auto variant = manager->GetInventoryModel(old_container, a_item)) {
+                manager->AddToQueue(a_item->GetFormID(), variant);
+            }
+            Manager::GetSingleton()->UpdateStackOnDrop(old_container, a_item, a_count);
+        }
+    }
+
+
+    return RE::BSEventNotifyControl::kContinue;
 }

@@ -98,6 +98,16 @@ void Manager::SerializeData(const char* filename)
 	Serialization::saveDataBinary(data, file_path);
 }
 
+void Manager::CleanData() {
+    std::unique_lock lock_inv(inventory_stacks_mutex_);
+    std::unique_lock lock_var(applied_variants_mutex_);
+    std::unique_lock lock_queue(queue_mutex_);
+
+    inventory_stacks.clear();
+    applied_variants.clear();
+    variants_queue.clear();
+}
+
 void Manager::PreLoadGame() {
 	// TODO: We don't know if the player is loading the last save or not
     const auto saveLoadManager = RE::SaveLoadManager::GetSingleton();
@@ -206,6 +216,31 @@ void Manager::UpdateStackOnDrop(const RE::TESObjectREFR* a_owner, const RE::TESB
         else break;
     }
 }
+void Manager::TransferOwnership(const RE::TESObjectREFR* a_oldOwner, const RE::TESObjectREFR* a_newOwner,
+	const RE::TESBoundObject* a_obj, int32_t a_count) {
+    const auto oldOwner_refid = a_oldOwner->GetFormID();
+    const auto a_newOwnerRefId = a_newOwner->GetFormID();
+    const auto obj_refid = a_obj->GetFormID();
+
+    std::unique_lock lock1(inventory_stacks_mutex_);
+    while (a_count > 0) {
+        if (!inventory_stacks[oldOwner_refid][obj_refid].empty()) {
+
+			auto item = inventory_stacks[oldOwner_refid][obj_refid].back();
+
+
+            inventory_stacks[oldOwner_refid][obj_refid].pop_back();
+
+			inventory_stacks[a_newOwnerRefId][obj_refid].push_back(item);
+
+			logger::trace("model: {}", item->model);
+            logger::trace("old stack size: {}", inventory_stacks[oldOwner_refid][obj_refid].size());
+            logger::trace("new Stack size: {}", inventory_stacks[a_newOwnerRefId][obj_refid].size());
+            a_count--;
+        } else
+            break;
+    }
+}
 
 const variant* Manager::GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item)
 {
@@ -221,10 +256,10 @@ const variant* Manager::GetInventoryModel(const RE::TESObjectREFR* a_owner, cons
 	return nullptr;
 }
 
-void Manager::SetInventoryBaseModel(RE::InventoryEntryData* a_entry)
+void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry)
 {
 	if (const auto base = a_entry->GetObject()) {
-		if (const auto variant = GetSingleton()->GetInventoryModel(RE::PlayerCharacter::GetSingleton(),base)) {
+		if (const auto variant = GetSingleton()->GetInventoryModel(owner, base)) {
 			if (const auto bm = base->As<RE::TESModel>()) {
 				bm->SetModel(variant->model);
 			}
@@ -237,9 +272,11 @@ void Manager::SetInventoryBaseModel(RE::InventoryEntryData* a_entry)
 			// TODO: Populate for other types
 
 			if (const auto inv = RE::Inventory3DManager::GetSingleton()) {
-                inv->Clear3D();
-                inv->GetRuntimeData().loadedModels.clear();
-                inv->UpdateItem3D(a_entry);
+                if (!inv->GetRuntimeData().loadedModels.empty()) {
+					inv->Clear3D();
+					inv->GetRuntimeData().loadedModels.clear();
+					inv->UpdateItem3D(a_entry);
+                }
 			}
 		}
     }

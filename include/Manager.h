@@ -29,6 +29,7 @@ public:
         static Manager singleton;
         return &singleton;
     }
+    void CleanData();
     void PreLoadGame();
     void SaveGame(const char* save_name);
     void Register(std::string key, variants value);
@@ -37,8 +38,10 @@ public:
 
     void UpdateStackOnPickUp(const RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, int32_t a_count);
     void UpdateStackOnDrop(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, int32_t a_count);
+    void TransferOwnership(const RE::TESObjectREFR* a_oldOwner, const RE::TESObjectREFR* a_newOwner,
+                           const RE::TESBoundObject* a_obj, int32_t a_count);
     const variant* GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
-    static void SetInventoryBaseModel(RE::InventoryEntryData* a_entry);
+    static void SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry);
     bool HasVariant(RefID refid);
     const variant* GetVariant(const std::string& model_name);
 	void ApplyVariant(RE::TESBoundObject* base,RefID id, const variant* a_variant);

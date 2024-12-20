@@ -63,19 +63,17 @@ namespace Hooks {
                                    bool a_arg3,
                                    bool a_play_sound);
         static inline REL::Relocation<decltype(pickUpObject)> pick_up_object_;
-
-        static RE::ObjectRefHandle RemoveItem(RE::Actor* a_this,
-            RE::TESBoundObject* a_item,
-            std::int32_t a_count,
-            RE::ITEM_REMOVE_REASON a_reason,
-            RE::ExtraDataList* a_extra_list,
-            RE::TESObjectREFR* a_move_to_ref,
-            const RE::NiPoint3* a_drop_loc,
-            const RE::NiPoint3* a_rotate);
-        static inline REL::Relocation<decltype(RemoveItem)> remove_item_;
     };
 
-    
+    class ContainerChangedEvent final : public RE::BSTEventSink<RE::TESContainerChangedEvent> {
+        RE::BSEventNotifyControl ProcessEvent(const RE::TESContainerChangedEvent* event,
+                                              RE::BSTEventSource<RE::TESContainerChangedEvent>*);
+
+    public:
+        static void Install() {
+            RE::ScriptEventSourceHolder::GetSingleton()->AddEventSink(new ContainerChangedEvent());
+        }
+    };
 
     inline void Install() {
         NpcSkinHook::Install();
@@ -83,5 +81,6 @@ namespace Hooks {
 		InventoryHoverHook::Install();
 		PlayerHook::install();
 		SaveHook::Install();
+        ContainerChangedEvent::Install();
     }
 }

@@ -1,20 +1,22 @@
 #include "Plugin.h"
 
 void OnMessage(SKSE::MessagingInterface::Message* message) {
+    auto manager = Manager::GetSingleton();
     if (message->type == SKSE::MessagingInterface::kDataLoaded) {
     }
-
-    auto manager = Manager::GetSingleton();
-    if (message->type == SKSE::MessagingInterface::kSaveGame) {
+    else if (message->type == SKSE::MessagingInterface::kSaveGame) {
         Hooks::listenSave2.store(false);
         Hooks::listenSave.store(true);
     }
-    if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
+    else if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
         Hooks::listenSave.store(false);
         Hooks::listenSave2.store(false);
 		manager->PreLoadGame();
-    }
-    if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
+    } 
+    else if (message->type == SKSE::MessagingInterface::kNewGame) {
+    	manager->CleanData();
+    } 
+    else if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
         //auto form = RE::TESForm::LookupByID<RE::TESObjectMISC>(0x5ACE4);
         //auto player = RE::PlayerCharacter::GetSingleton();
 
