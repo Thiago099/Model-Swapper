@@ -15,6 +15,18 @@ std::map<std::string, uint32_t> Manager::GetModelPathMap(){
 			++index;
 		}
 	}
+
+	for (std::shared_lock lock(inventory_stacks_mutex_); const auto& stack : inventory_stacks | std::views::values) {
+        for (const auto& item : stack | std::views::values) {
+            for (const auto& a_variant : item) {
+                if (uniqueVariants.insert(a_variant).second) {
+                    model_map[a_variant->model] = index;
+                    ++index;
+                }
+            }
+        }
+    }
+    
 	return model_map;
 }
 
@@ -81,6 +93,7 @@ void Manager::SerializeData(const char* filename)
 	std::shared_lock lock_queue(queue_mutex_);
 
 	const auto model_map = GetModelPathMap();
+
 	const Serialization::Data data(model_map, applied_variants, inventory_stacks);
 	Serialization::saveDataBinary(data, file_path);
 }
@@ -92,6 +105,7 @@ void Manager::PreLoadGame() {
     auto newSave = Str::CopySaveFileNameWithoutExtension(saveLoadManager->lastFileFullName);
 
 	const auto file_path = Serialization::serialization_path + newSave;
+
 	try {
 	    LoadSerializedData(file_path.c_str());
 	}
