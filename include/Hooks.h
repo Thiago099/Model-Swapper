@@ -1,4 +1,5 @@
 #pragma once
+#include "SaveLoadManager.h"
 
 namespace Hooks {
 
@@ -34,6 +35,23 @@ namespace Hooks {
         }
     };
 
+    struct SaveHook {
+
+
+        static inline REL::Relocation<RE::BSEventNotifyControl(RE::SaveLoadManager*,const RE::BSSaveDataEvent*, RE::BSTEventSource<RE::BSSaveDataEvent>*)> originalFunction;
+		static inline REL::Relocation<errno_t(RE::BSWin32SaveDataSystemUtility*, const char*, char*, bool, bool)> originalFunction2;
+
+		static RE::BSEventNotifyControl ProcessEvent(RE::SaveLoadManager* a_this, const RE::BSSaveDataEvent* a_event, RE::BSTEventSource<RE::BSSaveDataEvent>* a_eventSource);
+        static void PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_this,const char* a_fileName, char* a_dst, bool a_tmpSave, bool a_ignoreINI);
+
+        static void Install() {
+            originalFunction = REL::Relocation<std::uintptr_t>(RE::SaveLoadManager::VTABLE[0]).write_vfunc(0x1, ProcessEvent);
+            originalFunction2 = REL::Relocation<std::uintptr_t>(RE::VTABLE_BSWin32SaveDataSystemUtility[0]).write_vfunc(0x2, PrepareFileSavePath);
+        }
+    };
+    inline std::atomic<bool> listenSave = false;
+    inline std::atomic<bool> listenSave2 = false;
+
 
     class PlayerHook {
     public:
@@ -64,5 +82,6 @@ namespace Hooks {
         ReplaceTextureOnObjectsHook::Install();
 		InventoryHoverHook::Install();
 		PlayerHook::install();
+		SaveHook::Install();
     }
 }

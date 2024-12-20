@@ -6,10 +6,13 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
 
     auto manager = Manager::GetSingleton();
     if (message->type == SKSE::MessagingInterface::kSaveGame) {
-        manager->SaveGame();
+        Hooks::listenSave2.store(false);
+        Hooks::listenSave.store(true);
     }
     if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
-        manager->PreLoadGame();
+        Hooks::listenSave.store(false);
+        Hooks::listenSave2.store(false);
+		manager->PreLoadGame();
     }
     if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
         //auto form = RE::TESForm::LookupByID<RE::TESObjectMISC>(0x5ACE4);
@@ -25,6 +28,16 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
     }
 }
 
+void SaveCallback(SKSE::SerializationInterface*) {
+}
+
+void InitializeSerialization() {
+    //auto* serialization = SKSE::GetSerializationInterface();
+    //serialization->SetUniqueID(kDataKey);
+    //serialization->SetSaveCallback(SaveCallback);
+    //SKSE::log::trace("Cosave serialization initialized.");
+}
+
 SKSEPluginLoad(const SKSE::LoadInterface *skse) {
 
     SKSE::Init(skse);
@@ -33,5 +46,6 @@ SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     logger::info("Plugin loaded");
     Hooks::Install();
     Persistence::Install();
+	//InitializeSerialization();
     return true;
 }

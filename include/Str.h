@@ -16,7 +16,7 @@ namespace Str {
         return text;
     }
 
-    inline char* CopySaveFileNameWtihotExtension(const char* input) {
+    inline char* CopySaveFileNameWithoutExtension(const char* input) {
         size_t len = std::strlen(input);
         if (len >= 4 && std::strcmp(input + len - 4, ".ess") == 0) {
             char* result = new char[len - 3];

@@ -8,4 +8,5 @@ set(HEADER_FILES
 	include/Wrapper.h
 	include/TimeClass.h
 	include/SaveLoadManager.h
+	include/Serialization.h
 )

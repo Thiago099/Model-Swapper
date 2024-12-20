@@ -3,15 +3,28 @@
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {
-        if (const auto base = ref->GetBaseObject(); base && !Manager::GetSingleton()->GetAppliedVariant(ref->GetFormID())) {
+        logger::info("ReplaceTextureOnObjectsHook::ShouldBackgroundClone");
+        if (const auto base = ref->GetBaseObject()) {
             const auto manager = Manager::GetSingleton();
 			logger::info("Processing {:x} {:x}", ref->GetFormID(),ref->CreateRefHandle().native_handle());
-			if (!manager->HasVariant(ref->GetFormID())) {
-			    if (const auto variant = manager->FetchFromQueue()) {
+            if (!manager->HasVariant(ref->GetFormID()))
+            {
+			    if (const auto variant = manager->FetchFromQueue(base->GetFormID())) 
+                {
 					logger::info("Fetched from queue");
 				    manager->ApplyVariant(base, ref->GetFormID(), variant);
-                } else manager->Process(base, ref->GetFormID());
+                } 
+                else 
+                {
+					logger::info("Processing");
+                    manager->Process(base, ref->GetFormID());
+                }
 			}
+            else {
+				logger::info("Already processed");
+				const auto variant = manager->GetAppliedVariant(ref->GetFormID());
+                manager->ApplyVariant(base,ref->GetFormID(),variant);
+            }
         }
     }
     return originalFunction(ref);
@@ -77,11 +90,31 @@ RE::ObjectRefHandle Hooks::PlayerHook::RemoveItem(RE::Actor* a_this, RE::TESBoun
 	const auto manager = Manager::GetSingleton();
 	if (a_this && a_item && a_item->IsInventoryObject() && a_count > 0) {
 	    if (const auto variant = manager->GetInventoryModel(RE::PlayerCharacter::GetSingleton(), a_item)) {
-            manager->AddToQueue(variant);
+            manager->AddToQueue(a_item->GetFormID(), variant);
 		    logger::info("Added to queue");
 	    }
 		Manager::GetSingleton()->UpdateStackOnDrop(RE::PlayerCharacter::GetSingleton(),a_item,a_count);
 	}
 
 	return remove_item_(a_this, a_item, a_count, a_reason, a_extra_list, a_move_to_ref, a_drop_loc, a_rotate);
+}
+
+RE::BSEventNotifyControl Hooks::SaveHook::ProcessEvent(RE::SaveLoadManager* a_this, const RE::BSSaveDataEvent* a_event, RE::BSTEventSource<RE::BSSaveDataEvent>* a_eventSource)
+{
+	if (listenSave.load()) {
+		listenSave2.store(true);
+		listenSave.store(false);
+	}
+	return originalFunction(a_this, a_event, a_eventSource);
+}
+
+void Hooks::SaveHook::PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_this, const char* a_fileName, char* a_dst, bool a_tmpSave, bool a_ignoreINI)
+{
+	if (listenSave2.load()) {
+		listenSave2.store(false);
+	    logger::trace("SaveHook::PrepareFileSavePath");
+	    logger::info("File name: {}", a_fileName);
+		Manager::GetSingleton()->SaveGame(a_fileName);
+	}
+	originalFunction2(a_this, a_fileName, a_dst, a_tmpSave, a_ignoreINI);
 }

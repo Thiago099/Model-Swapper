@@ -89,6 +89,9 @@ add_commonlibsse_plugin(
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23) 
 target_precompile_headers(${PROJECT_NAME} PRIVATE include/PCH.h)
 
+find_package(Boost REQUIRED COMPONENTS serialization)
+target_link_libraries(${PROJECT_NAME} PRIVATE Boost::serialization)
+
 target_include_directories(
 	${PROJECT_NAME}
 	PRIVATE

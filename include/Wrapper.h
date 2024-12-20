@@ -15,11 +15,11 @@ using models = std::map<std::string, variants>;
 class AVObject {
 public:
     virtual void Reset() = 0;
-    virtual const variant* Match(models models, int variant) = 0;
+    virtual const variant* Match(const models& models, int variant) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
 
-inline variant* find(models& models, const char* str, const uint32_t seed) {
+inline variant* find(const models& models, const char* str, const uint32_t seed) {
     const auto key = Str::processString(str);
     if (const auto it = models.find(key); it != models.end()) {
         std::mt19937 engine(seed);
@@ -109,7 +109,7 @@ public:
         return func(src, &a2, &a3);
     }
 
-    const variant* Match(models models, const int _variant) override {
+    const variant* Match(const models& models, const int _variant) override {
 
         variant* result = nullptr;
 
@@ -166,7 +166,7 @@ public:
         }
     }
 
-    const variant* Match(models models, const int variant) override {
+    const variant* Match(const models& models, const int variant) override {
         if (!base) {
 			return nullptr;
         }

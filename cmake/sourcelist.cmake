@@ -4,4 +4,5 @@ set(SOURCE_FILES
 	src/Persistence.cpp
 	src/Hooks.cpp
 	src/SaveLoadManager.cpp
+	src/Serialization.cpp
 )
