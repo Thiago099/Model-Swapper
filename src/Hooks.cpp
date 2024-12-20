@@ -3,28 +3,22 @@
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {
-        logger::info("ReplaceTextureOnObjectsHook::ShouldBackgroundClone");
+        logger::trace("ReplaceTextureOnObjectsHook::ShouldBackgroundClone");
         if (const auto base = ref->GetBaseObject()) {
             const auto manager = Manager::GetSingleton();
-			logger::info("Processing {:x} {:x}", ref->GetFormID(),ref->CreateRefHandle().native_handle());
-            if (!manager->HasVariant(ref->GetFormID()))
-            {
-			    if (const auto variant = manager->FetchFromQueue(base->GetFormID())) 
-                {
-					logger::info("Fetched from queue");
-				    manager->ApplyVariant(base, ref->GetFormID(), variant);
-                } 
-                else 
-                {
-					logger::info("Processing");
-                    manager->Process(base, ref->GetFormID());
-                }
-			}
-            else {
-				logger::info("Already processed");
-				const auto variant = manager->GetAppliedVariant(ref->GetFormID());
-                manager->ApplyVariant(base,ref->GetFormID(),variant);
+            const auto refid = ref->GetFormID();
+			logger::trace("Processing {:x}", refid);
+            if (const auto ref_variant = manager->GetAppliedVariant(refid)) {
+                manager->ApplyVariant(base,refid,ref_variant);
             }
+            else if (const auto variant = manager->FetchFromQueue(base->GetFormID())) {
+				logger::trace("Fetched from queue");
+				manager->ApplyVariant(base, refid, variant);
+            }
+            else {
+			    logger::trace("Processing");
+                manager->Process(base, refid);
+			}
         }
     }
     return originalFunction(ref);
@@ -32,7 +26,7 @@ bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR
 
 int64_t Hooks::InventoryHoverHook::thunk(RE::InventoryEntryData* a1) {
     #undef GetObject
-    if (auto ui = RE::UI::GetSingleton(); ui && a1) {
+    if (const auto ui = RE::UI::GetSingleton(); ui && a1) {
         if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
 			Manager::SetInventoryBaseModel(a1);
         }
@@ -46,21 +40,21 @@ int64_t Hooks::InventoryHoverHook::thunk(RE::InventoryEntryData* a1) {
 bool Hooks::NpcSkinHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
 
     if (ref) {
-        if (auto obj = ref->GetBaseObject()) {
-            if (auto npc = obj->As<RE::TESNPC>()) {
+        if (const auto obj = ref->GetBaseObject()) {
+            if (const auto npc = obj->As<RE::TESNPC>()) {
                 
-                if (auto race = npc->race) {
-                    if (auto raceSkin = race->skin) {
-                        for (auto addon : raceSkin->armorAddons) {
-                            auto manager = Manager::GetSingleton();
+                if (const auto race = npc->race) {
+                    if (const auto raceSkin = race->skin) {
+                        for (const auto addon : raceSkin->armorAddons) {
+                            const auto manager = Manager::GetSingleton();
                             manager->Process(addon, ref->GetFormID());
                         }
                     }
                 }
 
-                if (auto skin = npc->skin) {
-                    for (auto addon : skin->armorAddons) {
-                        auto manager = Manager::GetSingleton();
+                if (const auto skin = npc->skin) {
+                    for (const auto addon : skin->armorAddons) {
+                        const auto manager = Manager::GetSingleton();
                         manager->Process(addon, ref->GetFormID());
                     }
                 }
@@ -77,7 +71,7 @@ void Hooks::PlayerHook::install()
     remove_item_ = player_character_vtbl.write_vfunc(0x56, RemoveItem);
 }
 
-void Hooks::PlayerHook::pickUpObject(RE::Actor* a_this, RE::TESObjectREFR* a_object, uint32_t a_count, bool a_arg3, bool a_play_sound)
+void Hooks::PlayerHook::pickUpObject(RE::Actor* a_this, RE::TESObjectREFR* a_object, int32_t a_count, bool a_arg3, bool a_play_sound)
 {
     if (a_this && a_object && a_object->GetBaseObject()->IsInventoryObject() && a_count>0) {
         Manager::GetSingleton()->UpdateStackOnPickUp(RE::PlayerCharacter::GetSingleton(),a_object,a_count);

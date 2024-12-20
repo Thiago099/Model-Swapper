@@ -59,7 +59,7 @@ namespace Hooks {
     private:
         static void pickUpObject(RE::Actor* a_this,
                                    RE::TESObjectREFR* a_object,
-                                   uint32_t a_count,
+                                   int32_t a_count,
                                    bool a_arg3,
                                    bool a_play_sound);
         static inline REL::Relocation<decltype(pickUpObject)> pick_up_object_;

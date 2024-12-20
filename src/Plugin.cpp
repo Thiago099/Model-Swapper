@@ -28,16 +28,6 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
     }
 }
 
-void SaveCallback(SKSE::SerializationInterface*) {
-}
-
-void InitializeSerialization() {
-    //auto* serialization = SKSE::GetSerializationInterface();
-    //serialization->SetUniqueID(kDataKey);
-    //serialization->SetSaveCallback(SaveCallback);
-    //SKSE::log::trace("Cosave serialization initialized.");
-}
-
 SKSEPluginLoad(const SKSE::LoadInterface *skse) {
 
     SKSE::Init(skse);
@@ -46,6 +36,6 @@ SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     logger::info("Plugin loaded");
     Hooks::Install();
     Persistence::Install();
-	//InitializeSerialization();
+    // TODO: Clear serialization folder for non-existing/deleted save game files.
     return true;
 }

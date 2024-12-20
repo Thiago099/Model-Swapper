@@ -43,7 +43,7 @@ void Manager::LoadSerializedData(const char* filename)
 			logger::critical("Model index not found in lookup: {}", model_index);
 			continue;
 		}
-		const auto model_name = saved_data.lookup.at(model_index);
+		const auto& model_name = saved_data.lookup.at(model_index);
 		// check if model_name is a variant in current runtime
 		if (const auto a_variant = GetVariant(model_name)) {
 			applied_variants[refid] = a_variant;
@@ -60,7 +60,7 @@ void Manager::LoadSerializedData(const char* filename)
 					logger::critical("Model index not found in lookup: {}", model_index);
 					continue;
 				}
-				const auto model_name = saved_data.lookup.at(model_index);
+				const auto& model_name = saved_data.lookup.at(model_index);
 				// check if model_name is a variant in current runtime
 				if (const auto a_variant = GetVariant(model_name)) {
 					inventory_stacks[owner_refid][item_refid].push_back(a_variant);
@@ -150,39 +150,43 @@ void Manager::UpdateStackOnPickUp(const RE::TESObjectREFR* a_owner, RE::TESObjec
 {
 
 	const auto base = a_obj->GetBaseObject();
+	const auto obj_refid = a_obj->GetFormID();
+	const auto owner_refid = a_owner->GetFormID();
 
     // TODO: discuss whether this should have been already stored
-	const auto* variant = GetAppliedVariant(a_obj->GetFormID());
+	const auto* variant = GetAppliedVariant(obj_refid );
 	if (!variant) {
-		logger::error("No variant found for {}", a_obj->GetFormID());
+		logger::warn("No variant found for {}", obj_refid );
 		return;
 	}
 
 	std::unique_lock lock(inventory_stacks_mutex_);
     while (a_count>0) {
-		logger::info("Add.Owner: {} {:x}, Item: {:x}", a_owner->GetName(),a_owner->GetFormID(), a_obj->GetFormID());
-        inventory_stacks[a_owner->GetFormID()][base->GetFormID()].push_back(variant);
+		logger::trace("Add.Owner: {} {:x}, Item: {:x}", a_owner->GetName(),owner_refid, obj_refid);
+        inventory_stacks[owner_refid][base->GetFormID()].push_back(variant);
 		a_count--;
     }
-    for (const auto& item : inventory_stacks[a_owner->GetFormID()][base->GetFormID()]) {
+    for (const auto& item : inventory_stacks[owner_refid][base->GetFormID()]) {
 		if (item && item->model) logger::info("Stack: {}", item->model);
 	}
 
 	if (std::unique_lock lock2(applied_variants_mutex_);
         applied_variants.contains(a_obj->GetFormID())) {
-        applied_variants.erase(a_obj->GetFormID());
+        applied_variants.erase(obj_refid);
 	}
 }
 
 void Manager::UpdateStackOnDrop(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, int32_t a_count)
 {
+	const auto owner_refid = a_owner->GetFormID();
+	const auto obj_refid = a_obj->GetFormID();
+
 	std::unique_lock lock1(inventory_stacks_mutex_);
     while (a_count>0) {
-		logger::info("Remove. Owner: {} {:x}, Item: {:x}", a_owner->GetName(),a_owner->GetFormID(), a_obj->GetFormID());
-        if (!inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].empty()) {
-            inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].pop_back();
-            logger::info("Stack size: {}",
-                         inventory_stacks[a_owner->GetFormID()][a_obj->GetFormID()].size());
+		logger::trace("Remove. Owner: {} {:x}, Item: {:x}", a_owner->GetName(),owner_refid, obj_refid);
+        if (!inventory_stacks[owner_refid][obj_refid].empty()) {
+            inventory_stacks[owner_refid][obj_refid].pop_back();
+            logger::trace("Stack size: {}", inventory_stacks[owner_refid][obj_refid].size());
 			a_count--;
         }
         else break;
@@ -206,18 +210,23 @@ const variant* Manager::GetInventoryModel(const RE::TESObjectREFR* a_owner, cons
 void Manager::SetInventoryBaseModel(RE::InventoryEntryData* a_entry)
 {
 	if (const auto base = a_entry->GetObject()) {
-		if (const auto variant = Manager::GetSingleton()->GetInventoryModel(RE::PlayerCharacter::GetSingleton(),base)) {
+		if (const auto variant = GetSingleton()->GetInventoryModel(RE::PlayerCharacter::GetSingleton(),base)) {
 			if (const auto bm = base->As<RE::TESModel>()) {
 				bm->SetModel(variant->model);
 			}
 			if (base->Is(RE::TESObjectWEAP::FORMTYPE)) {
 				const auto weap = base->As<RE::TESObjectWEAP>();
-				weap->firstPersonModelObject->SetModel(variant->model);
+				if (const auto fpModelObj = weap->firstPersonModelObject) {
+					fpModelObj->SetModel(variant->model);
+				}
 			}
-			const auto inv = RE::Inventory3DManager::GetSingleton();
-            inv->Clear3D();
-            inv->GetRuntimeData().loadedModels.clear();
-            inv->UpdateItem3D(a_entry);
+			// TODO: Populate for other types
+
+			if (const auto inv = RE::Inventory3DManager::GetSingleton()) {
+                inv->Clear3D();
+                inv->GetRuntimeData().loadedModels.clear();
+                inv->UpdateItem3D(a_entry);
+			}
 		}
     }
 }
@@ -284,5 +293,5 @@ const variant* Manager::GetVariant(const std::string& model_name)
 }
 
 const variant* Manager::Process(AVObject* arma, const RE::FormID id) const {
-    return arma->Match(sources, id);
+    return arma->Match(sources, static_cast<int>(id));
 }

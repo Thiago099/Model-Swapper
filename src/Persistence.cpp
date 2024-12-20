@@ -4,25 +4,26 @@ const std::string pattern = "_MS.json";
 const std::string directory = "Data/";
 
 
+namespace {
+    void EachConfigFile(const std::function<void(std::string, json)>& callback) {
 
-void EachConfigFile(std::function<void(std::string, json)> callback) {
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".json") {
+                const std::string filename = entry.path().filename().string();
 
-    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".json") {
-            const std::string filename = entry.path().filename().string();
+                if (filename.size() >= pattern.size() && filename.substr(filename.size() - pattern.size()) == pattern) {
+                    std::ifstream f(entry.path());
+                    if (!f) {
+                        continue;
+                    }
 
-            if (filename.size() >= pattern.size() && filename.substr(filename.size() - pattern.size()) == pattern) {
-                std::ifstream f(entry.path());
-                if (!f) {
-                    continue;
-                }
+                    try {
+                        const json data = json::parse(f);
 
-                try {
-                    json data = json::parse(f);
+                        callback(filename, data);
 
-                    callback(filename, data);
-
-                } catch (const json::parse_error&) {
+                    } catch (const json::parse_error&) {  // NOLINT(bugprone-empty-catch)
+                    }
                 }
             }
         }
@@ -33,7 +34,7 @@ void EachConfigFile(std::function<void(std::string, json)> callback) {
 void Persistence::Install() {
 
     auto ini = Ini::IniReader("ModelSwapper.ini");
-    auto config = Config::GetSingleton();
+    const auto config = Config::GetSingleton();
     ini.SetSection("TemporalActivation");
     config->BypassTemporalActivation = ini.GetBool("BypassTemporalActivation", false);
     config->NowOverride = Time::fromString(ini.GetString("NowOverride", ""));
@@ -41,7 +42,7 @@ void Persistence::Install() {
 
     config->NowOverride.log("now override");
 
-    EachConfigFile([](std::string filename, json data) {
+    EachConfigFile([](std::string filename, const json& data) {
         auto manager = Manager::GetSingleton();
         if (data.is_array()) {
             auto i = 0;
@@ -83,13 +84,13 @@ void Persistence::Install() {
 
                 auto j = 0;
 
-                for (auto v : variants) {
+                for (const auto& v : variants) {
                     if (!v.is_string()) {
                         logger::error("error processing item {} on file {} variant {} must be string", i, filename, j);
                         continue;
                     }
-                    auto modelPath = strdup(v.get<std::string>().c_str());
-                    auto key = strdup(Str::processString(v.get<std::string>()).c_str());
+                    auto modelPath = _strdup(v.get<std::string>().c_str());
+                    auto key = _strdup(Str::processString(v.get<std::string>()).c_str());
                     auto current = new variant();
                     current->startDate = startDate;
                     current->endDate = endDate;

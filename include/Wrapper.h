@@ -14,6 +14,7 @@ using models = std::map<std::string, variants>;
 
 class AVObject {
 public:
+    virtual ~AVObject() = default;
     virtual void Reset() = 0;
     virtual const variant* Match(const models& models, int variant) = 0;
     virtual RE::TESForm* GetBase() = 0;
@@ -60,7 +61,7 @@ inline variant* find(const models& models, const char* str, const uint32_t seed)
     return nullptr;
 }
 
-class AVObjectARMA : public AVObject {
+class AVObjectARMA final : public AVObject {
     const char* initialMaleThirdPersonModle = nullptr;
     const char* initialFemaleThirdPersonModle = nullptr;
     const char* initialMaleFirstPersonModle = nullptr;
@@ -68,9 +69,10 @@ class AVObjectARMA : public AVObject {
     RE::TESObjectARMA* base = nullptr;
 
 public:
-    ~AVObjectARMA() {
+    ~AVObjectARMA() override {
     }
-    AVObjectARMA(RE::TESObjectARMA* base) : base(base) {
+
+    explicit AVObjectARMA(RE::TESObjectARMA* base) : base(base) {
         if (!base) {
             return;    
         }
@@ -101,7 +103,8 @@ public:
     RE::TESForm* GetBase() override {
         return base;
     }
-    int64_t RequestModel2(const char* src) {
+
+    static int64_t RequestModel2(const char* src) {
         int64_t a2 = 0;
         int64_t a3 = 3;
         using func_t = int64_t(const char* , int64_t*, int64_t*);
@@ -111,7 +114,7 @@ public:
 
     const variant* Match(const models& models, const int _variant) override {
 
-        variant* result = nullptr;
+        const variant* result = nullptr;
 
         if (!base) {
 			return nullptr;
@@ -143,13 +146,14 @@ public:
 };
 
 
-class AVModel: public AVObject {
+class AVModel final : public AVObject {
     const char* model = nullptr;
     RE::TESForm* base = nullptr;
 public:
-    ~AVModel() {
+    ~AVModel() override {
     }
-    AVModel(RE::TESForm* base) : base(base) {
+
+    explicit AVModel(RE::TESForm* base) : base(base) {
         if (!base) {
             return;
         }

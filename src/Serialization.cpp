@@ -10,7 +10,7 @@ void Serialization::saveDataBinary(const Data& data, const std::string& filename
     }
 
     boost::archive::binary_oarchive oa(ofs);
-    oa << data;  // Serialize into binary format
+    oa << data;
 }
 
 void Serialization::loadDataBinary(Data& data, const std::string& filename) {
@@ -20,7 +20,7 @@ void Serialization::loadDataBinary(Data& data, const std::string& filename) {
     }
 
     boost::archive::binary_iarchive ia(ifs);
-    ia >> data;  // Deserialize from binary format
+    ia >> data;
 }
 
 
