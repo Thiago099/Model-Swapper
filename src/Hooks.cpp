@@ -1,21 +1,7 @@
 #include "Hooks.h"
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
-    if (ref) {
-        if (const auto base = ref->GetBaseObject()) {
-            const auto manager = Manager::GetSingleton();
-            const auto refid = ref->GetFormID();
-            if (const auto ref_variant = manager->GetAppliedVariant(refid)) {
-                manager->ApplyVariant(base,refid,ref_variant);
-            }
-            else if (const auto variant = manager->FetchFromQueue(base->GetFormID())) {
-				manager->ApplyVariant(base, refid, variant);
-            }
-            else {
-                manager->Process(base, refid);
-			}
-        }
-    }
+	if (ref) Manager::GetSingleton()->ProcessReference(ref);
     return originalFunction(ref);
 }
 

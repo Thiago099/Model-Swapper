@@ -113,7 +113,7 @@ void Hooks::MoveItemHooks<RefType>::pickUpObject(RefType* a_this, RE::TESObjectR
     if (!a_this || !a_object || !a_object->GetBaseObject() || !a_object->GetBaseObject()->IsInventoryObject() || a_count <= 0) {
         return pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 	}
-    Manager::GetSingleton()->HandleItemPickup(a_this,a_object,a_count);
+    Manager::GetSingleton()->OnItemPickup(a_this,a_object,a_count);
     pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 }
 
@@ -130,7 +130,7 @@ RE::ObjectRefHandle* Hooks::MoveItemHooks<RefType>::RemoveItem(RefType* a_this, 
 	auto manager = Manager::GetSingleton();
 	if (!a_move_to_ref) {
 		if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
-		    manager->HandleItemDrop(a_this,a_item,a_count);
+		    manager->OnItemDrop(a_this,a_item,a_count);
         }
         else {
             manager->UpdateStackOnRemove(a_this,a_item,a_count);

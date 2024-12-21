@@ -6,7 +6,8 @@
 #include <boost/serialization/version.hpp>
 #include "Wrapper.h"
 
-using inventory_stack = std::map<FormID, std::vector<const variant*>>;
+using v_variant = std::vector<const variant*>;
+using inventory_stack = std::map<FormID, v_variant>;
 
 namespace Serialization {
 
