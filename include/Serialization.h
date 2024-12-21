@@ -14,11 +14,6 @@ namespace Serialization {
 
 	inline const std::string serialization_path = "Data/SKSE/Plugins/ModelSwapper/Serialization/";
 
-    inline const char* GetPath(const std::string& prefix, const char* filename) {
-		const std::string path = prefix + filename;
-		return path.c_str();
-	}
-
 	struct Data {
         std::map<uint32_t,std::string> lookup;
         std::map<uint32_t, uint32_t> applied;
