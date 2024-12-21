@@ -9,4 +9,6 @@ set(HEADER_FILES
 	include/TimeClass.h
 	include/SaveLoadManager.h
 	include/Serialization.h
+	include/UI.h
+	include/SKSEMenuFramework.h
 )

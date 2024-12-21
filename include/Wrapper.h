@@ -15,7 +15,6 @@ using models = std::map<std::string, variants>;
 class AVObject {
 public:
     virtual ~AVObject() = default;
-    virtual void Reset() = 0;
     virtual const variant* Match(const models& models, int variant) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
@@ -86,20 +85,6 @@ public:
         }
 
     }
-
-    void Reset() override {
-        if (!base) {
-            return;
-        }
-        if (base->bipedModels) {
-            base->bipedModels[RE::SEXES::kMale].SetModel(initialMaleThirdPersonModle);
-            base->bipedModels[RE::SEXES::kFemale].SetModel(initialFemaleThirdPersonModle);
-        }
-        if (base->bipedModel1stPersons) {
-            base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(initialMaleFirstPersonModle);
-            base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(initialFemaleFirstPersonModel);
-        }
-    }
     RE::TESForm* GetBase() override {
         return base;
     }
@@ -164,12 +149,6 @@ public:
 
     RE::TESForm* GetBase() override { return base; }
 
-    void Reset() override {
-        if (!base) {
-            return;
-        }
-    }
-
     const variant* Match(const models& models, const int variant) override {
         if (!base) {
 			return nullptr;
@@ -183,5 +162,76 @@ public:
 
         }
 		return nullptr;
+    }
+};
+
+
+class AVObjectARMO : public AVObject {
+    const char* male = nullptr;
+    const char* female = nullptr;
+    RE::TESObjectARMO* base = nullptr;
+
+public:
+    ~AVObjectARMO() {}
+    AVObjectARMO(RE::TESObjectARMO* base) : base(base) {
+        if (!base) {
+            return;
+        }
+
+        male = base->worldModels[RE::SEXES::kMale].GetModel();
+        female = base->worldModels[RE::SEXES::kFemale].GetModel();
+    }
+
+    RE::TESForm* GetBase() override { return base; }
+
+    const variant* Match(const models& models, const int _variant) override {
+        const variant* result = nullptr;
+        if (!base) {
+            return result;
+        }
+        if (auto item = find(models, male, _variant)) {
+            result = item;
+            base->worldModels[RE::SEXES::kMale].SetModel(item->model);
+        }
+        if (auto item = find(models, female, _variant)) {
+            result = item;
+            base->worldModels[RE::SEXES::kFemale].SetModel(item->model);
+        }
+        return result;
+    }
+};
+
+class AVObjectWEAP : public AVObject {
+    const char* firstPersonModel = nullptr;
+    const char* model = nullptr;
+    RE::TESObjectWEAP* base = nullptr;
+
+public:
+    ~AVObjectWEAP() {}
+    AVObjectWEAP(RE::TESObjectWEAP* base) : base(base) {
+        if (!base) {
+            return;
+        }
+
+        firstPersonModel = base->firstPersonModelObject->GetModel();
+        model = base->GetModel();
+    }
+    RE::TESForm* GetBase() override { return base; }
+
+
+    const variant* Match(const models& models, const int _variant) override {
+        const variant* result = nullptr;
+        if (!base) {
+            return result;
+        }
+        if (auto item = find(models, firstPersonModel, _variant)) {
+            result = item;
+            base->firstPersonModelObject->SetModel(item->model);
+        }
+        if (auto item = find(models, model, _variant)) {
+            result = item;  
+            base->SetModel(item->model);
+        }
+        return result;
     }
 };

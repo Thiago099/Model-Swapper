@@ -42,7 +42,7 @@ std::map<std::string, uint32_t> Manager::GetModelPathMap(){
         }
     }
 
-	for (std::shared_lock lock(applied_variants_mutex_); const auto & stack : worldobject_stacks | std::views::values) {
+	for (std::shared_lock lock(applied_variants_mutex_); const auto & stack : world_object_stacks | std::views::values) {
 		for (const auto& a_variant : stack) {
 			if (!a_variant) continue;
 			if (uniqueVariants.insert(a_variant).second) {
@@ -117,10 +117,10 @@ void Manager::LoadSerializedData(const char* filename)
 			const auto& model_name = saved_data.lookup.at(model_index);
 			// check if model_name is a variant in current runtime
 			if (model_name.empty()) {
-				worldobject_stacks[owner_refid].push_back(nullptr);
+				world_object_stacks[owner_refid].push_back(nullptr);
 		    }
 			else if (const auto a_variant = GetVariant(model_name)) {
-				worldobject_stacks[owner_refid].push_back(a_variant);
+				world_object_stacks[owner_refid].push_back(a_variant);
 			}
 			else {
 				logger::critical("Model name not found in sources: {}", model_name);
@@ -140,7 +140,7 @@ void Manager::SerializeData(const char* filename)
 	std::unique_lock lock_inv(inventory_stacks_mutex_);
 	std::unique_lock lock_var(applied_variants_mutex_);
 
-	const Serialization::Data data(model_map, applied_variants, inventory_stacks, worldobject_stacks);
+	const Serialization::Data data(model_map, applied_variants, inventory_stacks, world_object_stacks);
 	Serialization::saveDataBinary(data, file_path);
 }
 
@@ -191,7 +191,7 @@ void Manager::RemoveFromStack(const RefID owner_id, const FormID item_id)
 
 v_variant& Manager::GetWOStack(const RefID refid)
 {
-	return worldobject_stacks[refid];
+	return world_object_stacks[refid];
 }
 
 std::vector<const variant*> Manager::GetTopOfStack(const std::vector<const variant*>& stack, const uint32_t count)
@@ -245,19 +245,58 @@ void Manager::Register(std::string key, variants value) {
     }
 }
 
-void Manager::Process(RE::TESBoundObject* base, const RefID id) {
-    const auto wrapper = new AVModel(base);
-    if (const auto variant = Process(wrapper, id)) {
-	    std::unique_lock lock(applied_variants_mutex_);
-        applied_variants[id] = variant;
+const variant* Manager::Process(RE::TESForm* base, const RefID id) {
+    const variant* result = nullptr;
+	if (auto obj = base->As<RE::TESObjectARMO>()) {
+        result = ProcessImpl(obj, id);
+	}
+	else if (auto obj = base->As<RE::TESObjectARMA>()) {
+        result = ProcessImpl(obj, id);
     }
-    delete wrapper;
+	else if (auto obj = base->As<RE::TESObjectWEAP>()) {
+        result = ProcessImpl(obj, id);
+    } else if (auto model = base->As<RE::TESModel>()) {
+        result = ProcessImpl(base, id);
+	}
+
+	if (!result) {
+        return nullptr;
+	}
+
+    if (base->IsInventoryObject()) {
+		std::unique_lock lock(applied_variants_mutex_);
+        applied_variants[id] = result;
+    }
+
+    return result;
 }
 
-void Manager::Process(RE::TESObjectARMA* base, const RE::FormID id) const {
+const variant* Manager::ProcessImpl(RE::TESObjectARMA* base, const RE::FormID id) const {
     const auto wrapper = new AVObjectARMA(base);
-    Process(wrapper, id);
+    const variant* result = wrapper->Match(sources, id);
     delete wrapper;
+    return result;
+}
+
+const variant* Manager::ProcessImpl(RE::TESObjectARMO* base, RE::FormID id) const {
+    const auto wrapper = new AVObjectARMO(base);
+    const variant* result = wrapper->Match(sources, id);
+    delete wrapper;
+    return result;
+}
+
+const variant* Manager::ProcessImpl(RE::TESObjectWEAP* base, RE::FormID id) const {
+    const auto wrapper = new AVObjectWEAP(base);
+    const variant* result = wrapper->Match(sources, id);
+    delete wrapper;
+    return result;
+}
+
+const variant* Manager::ProcessImpl(RE::TESForm* base, RE::FormID id) const {
+    const auto wrapper = new AVModel(base);
+    const variant* result = wrapper->Match(sources, id);
+    delete wrapper;
+    return result;
 }
 
 void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count)
@@ -289,7 +328,7 @@ void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj,
 	if (std::unique_lock lock(applied_variants_mutex_);
         applied_variants.contains(a_obj->GetFormID())) {
         applied_variants.erase(obj_refid);
-		worldobject_stacks.erase(obj_refid);
+		world_object_stacks.erase(obj_refid);
 	}
 }
 
@@ -351,7 +390,8 @@ std::vector<const variant*> Manager::GetInventoryModels(const RE::TESObjectREFR*
 void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry)
 {
 	if (const auto base = a_entry->GetObject()) {
-		if (const auto variant = GetSingleton()->GetInventoryModel(owner,base)) {
+		if (const auto variant = GetSingleton()->GetInventoryModel(owner, base)) {
+
 			if (const auto bm = base->As<RE::TESModel>()) {
 				bm->SetModel(variant->model);
 			}
@@ -377,10 +417,12 @@ void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntry
 const variant* Manager::GetAppliedVariant(const RefID id)
 {
 	std::shared_lock lock(applied_variants_mutex_);
+
     if (const auto it = applied_variants.find(id);
         it != applied_variants.end()) {
 		return it->second;
 	}
+
 	return nullptr;
 }
 
@@ -448,28 +490,25 @@ void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
 		logger::warn("Base object not found for refid: {:x}", refid);
 		return;
 	}
-    if (const auto ref_variant = GetAppliedVariant(refid)) {
-        ApplyVariant(base, refid, ref_variant);
-    }
-    else if (const auto variant_vector = FetchFromQueue(base->GetFormID());!variant_vector.empty()) {
-		auto top_stack = GetTopOfStack(variant_vector, ref_count);
-		top_stack = top_stack.empty() ? std::vector<const variant*>(ref_count, nullptr) : top_stack;
-		ApplyVariant(base, refid, top_stack.back());
-		worldobject_stacks[refid] = top_stack;
-    }
-    else {
+
+	if (base->IsInventoryObject()) {
+        if (const auto ref_variant = GetAppliedVariant(refid)) {
+            ApplyVariant(base, refid, ref_variant);
+        } else if (const auto variant_vector = FetchFromQueue(base->GetFormID()); !variant_vector.empty()) {
+            auto top_stack = GetTopOfStack(variant_vector, ref_count);
+            top_stack = top_stack.empty() ? std::vector<const variant*>(ref_count, nullptr) : top_stack;
+            ApplyVariant(base, refid, top_stack.back());
+            world_object_stacks[refid] = top_stack;
+        } else {
+            Process(base, refid);
+            if (const auto applied_variant = GetAppliedVariant(refid)) {
+                world_object_stacks[refid] = std::vector(ref_count, applied_variant);
+            } else {
+                world_object_stacks[refid] = std::vector<const variant*>(ref_count, nullptr);
+            }
+        }
+    } else {
         Process(base, refid);
-		// also update worldobject_stacks
-        if (const auto applied_variant = GetAppliedVariant(refid)) {
-			worldobject_stacks[refid] = std::vector(ref_count, applied_variant);
-		}
-		else {
-			worldobject_stacks[refid] = std::vector<const variant*>(ref_count, nullptr);
-		}
-
 	}
-}
 
-const variant* Manager::Process(AVObject* arma, const RE::FormID id) const {
-    return arma->Match(sources, static_cast<int>(id));
 }

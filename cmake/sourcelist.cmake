@@ -5,4 +5,5 @@ set(SOURCE_FILES
 	src/Hooks.cpp
 	src/SaveLoadManager.cpp
 	src/Serialization.cpp
+	src/UI.cpp
 )

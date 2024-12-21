@@ -46,6 +46,7 @@ SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     logger::info("Plugin loaded");
     Hooks::Install();
     Persistence::Install();
+    UI::Install();
     // TODO: Clear serialization folder for non-existing/deleted save game files.
     return true;
 }

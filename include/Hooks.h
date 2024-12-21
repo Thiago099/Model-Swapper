@@ -17,12 +17,7 @@ namespace Hooks {
     struct InventoryHoverHook {
         static int64_t thunk(RE::InventoryEntryData* a1);
         static inline REL::Relocation<decltype(thunk)> originalFunction;
-        static void Install() {
-            auto& trampoline = SKSE::GetTrampoline();
-            trampoline.create(14);
-            const REL::Relocation<std::uintptr_t> function{REL::RelocationID(51019, 51897)};
-            originalFunction = trampoline.write_call<5>(function.address() + REL::Relocate(0x114, 0x22c), thunk);
-        }
+        static void Install();
     };
 
 
@@ -31,9 +26,7 @@ namespace Hooks {
 
         static bool ShouldBackgroundClone(RE::TESObjectREFR* ref);
 
-        static void Install() {
-            originalFunction = REL::Relocation<std::uintptr_t>(RE::Character::VTABLE[0]).write_vfunc(0x6D, ShouldBackgroundClone);
-        }
+        static void Install();
     };
 
     struct SaveHook {
@@ -45,10 +38,7 @@ namespace Hooks {
 		static RE::BSEventNotifyControl ProcessEvent(RE::SaveLoadManager* a_this, const RE::BSSaveDataEvent* a_event, RE::BSTEventSource<RE::BSSaveDataEvent>* a_eventSource);
         static void PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_this,const char* a_fileName, char* a_dst, bool a_tmpSave, bool a_ignoreINI);
 
-        static void Install() {
-            originalFunction = REL::Relocation<std::uintptr_t>(RE::SaveLoadManager::VTABLE[0]).write_vfunc(0x1, ProcessEvent);
-            originalFunction2 = REL::Relocation<std::uintptr_t>(RE::VTABLE_BSWin32SaveDataSystemUtility[0]).write_vfunc(0x2, PrepareFileSavePath);
-        }
+        static void Install();
     };
     inline std::atomic<bool> listenSave = false;
     inline std::atomic<bool> listenSave2 = false;
@@ -60,14 +50,7 @@ namespace Hooks {
     template <typename RefType>
     class MoveItemHooks {
     public:
-        static void install(const bool is_actor = true) {
-			REL::Relocation<std::uintptr_t> _vtbl{ RefType::VTABLE[0] };
-			if (is_actor) {
-			    pick_up_object_ = _vtbl.write_vfunc(0xCC, pickUpObject);
-			}
-			remove_item_ = _vtbl.write_vfunc(0x56, RemoveItem);
-			add_object_to_container_ = _vtbl.write_vfunc(0x5A, addObjectToContainer);
-        }
+        static void install(const bool is_actor = true);
 
     private:
         static void pickUpObject(RefType* a_this,
@@ -97,18 +80,19 @@ namespace Hooks {
         static inline REL::Relocation<decltype(addObjectToContainer)> add_object_to_container_;
     };
 
-    inline void Install() {
-        NpcSkinHook::Install();
-        ReplaceTextureOnObjectsHook::Install();
-		InventoryHoverHook::Install();
-		MoveItemHooks<RE::PlayerCharacter>::install();
-		MoveItemHooks<RE::TESObjectREFR>::install(false);
-		MoveItemHooks<RE::Character>::install();
-		SaveHook::Install();
-    }
+    void Install();
 }
 
 
+template <typename RefType>
+inline void Hooks::MoveItemHooks<RefType>::install(const bool is_actor) {
+    REL::Relocation<std::uintptr_t> _vtbl{RefType::VTABLE[0]};
+    if (is_actor) {
+        pick_up_object_ = _vtbl.write_vfunc(0xCC, pickUpObject);
+    }
+    remove_item_ = _vtbl.write_vfunc(0x56, RemoveItem);
+    add_object_to_container_ = _vtbl.write_vfunc(0x5A, addObjectToContainer);
+}
 template <typename RefType>
 void Hooks::MoveItemHooks<RefType>::pickUpObject(RefType* a_this, RE::TESObjectREFR* a_object, int32_t a_count,
     bool a_arg3, bool a_play_sound) {
