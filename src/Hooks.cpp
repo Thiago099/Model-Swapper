@@ -1,22 +1,17 @@
 #include "Hooks.h"
-#include "Manager.h"
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {
-        logger::trace("ReplaceTextureOnObjectsHook::ShouldBackgroundClone");
         if (const auto base = ref->GetBaseObject()) {
             const auto manager = Manager::GetSingleton();
             const auto refid = ref->GetFormID();
-			logger::trace("Processing {:x}", refid);
             if (const auto ref_variant = manager->GetAppliedVariant(refid)) {
                 manager->ApplyVariant(base,refid,ref_variant);
             }
             else if (const auto variant = manager->FetchFromQueue(base->GetFormID())) {
-				logger::trace("Fetched from queue");
 				manager->ApplyVariant(base, refid, variant);
             }
             else {
-			    logger::trace("Processing");
                 manager->Process(base, refid);
 			}
         }
@@ -28,10 +23,19 @@ int64_t Hooks::InventoryHoverHook::thunk(RE::InventoryEntryData* a1) {
     #undef GetObject
     if (const auto ui = RE::UI::GetSingleton(); ui && a1) {
         if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
-			Manager::SetInventoryBaseModel(a1);
+			Manager::SetInventoryBaseModel(RE::PlayerCharacter::GetSingleton(),a1);
         }
         else if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
-            // TODO: Container Menu
+            if (const auto cm = ui->GetMenu<RE::ContainerMenu>()) {
+                if (const auto items= cm->GetRuntimeData().itemList) {
+                    if (const auto selected = items->GetSelectedItem()) {
+                        const auto & data = selected->data;
+                        if (const auto owner = RE::TESObjectREFR::LookupByHandle(data.owner).get()) {
+                            Manager::SetInventoryBaseModel(owner, a1);
+                        }
+                    }
+                }
+            }
         }
     }
     return originalFunction(a1);
@@ -64,34 +68,6 @@ bool Hooks::NpcSkinHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     return originalFunction(ref);
 }
 
-void Hooks::PlayerHook::install()
-{
-	REL::Relocation<std::uintptr_t> player_character_vtbl{ RE::VTABLE_PlayerCharacter[0] };
-    pick_up_object_ = player_character_vtbl.write_vfunc(0xCC, pickUpObject);
-    remove_item_ = player_character_vtbl.write_vfunc(0x56, RemoveItem);
-}
-
-void Hooks::PlayerHook::pickUpObject(RE::Actor* a_this, RE::TESObjectREFR* a_object, int32_t a_count, bool a_arg3, bool a_play_sound)
-{
-    if (a_this && a_object && a_object->GetBaseObject()->IsInventoryObject() && a_count>0) {
-        Manager::GetSingleton()->UpdateStackOnPickUp(RE::PlayerCharacter::GetSingleton(),a_object,a_count);
-    }
-    pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
-}
-
-RE::ObjectRefHandle Hooks::PlayerHook::RemoveItem(RE::Actor* a_this, RE::TESBoundObject* a_item, std::int32_t a_count, RE::ITEM_REMOVE_REASON a_reason, RE::ExtraDataList* a_extra_list, RE::TESObjectREFR* a_move_to_ref, const RE::NiPoint3* a_drop_loc, const RE::NiPoint3* a_rotate)
-{
-	const auto manager = Manager::GetSingleton();
-	if (a_this && a_item && a_item->IsInventoryObject() && a_count > 0) {
-	    if (const auto variant = manager->GetInventoryModel(RE::PlayerCharacter::GetSingleton(), a_item)) {
-            manager->AddToQueue(a_item->GetFormID(), variant);
-		    logger::info("Added to queue");
-	    }
-		Manager::GetSingleton()->UpdateStackOnDrop(RE::PlayerCharacter::GetSingleton(),a_item,a_count);
-	}
-
-	return remove_item_(a_this, a_item, a_count, a_reason, a_extra_list, a_move_to_ref, a_drop_loc, a_rotate);
-}
 
 RE::BSEventNotifyControl Hooks::SaveHook::ProcessEvent(RE::SaveLoadManager* a_this, const RE::BSSaveDataEvent* a_event, RE::BSTEventSource<RE::BSSaveDataEvent>* a_eventSource)
 {

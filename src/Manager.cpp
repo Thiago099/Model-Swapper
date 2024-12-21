@@ -3,6 +3,17 @@
 #include <ranges>
 
 
+void Manager::ClearData()
+{
+	std::unique_lock lock_inv(inventory_stacks_mutex_);
+	std::unique_lock lock_var(applied_variants_mutex_);
+	std::unique_lock lock_queue(queue_mutex_);
+
+	inventory_stacks.clear();
+	applied_variants.clear();
+	variants_queue.clear();
+}
+
 std::map<std::string, uint32_t> Manager::GetModelPathMap(){
 	std::map<std::string, uint32_t> model_map;
 	std::set<const variant*> uniqueVariants;
@@ -35,19 +46,10 @@ void Manager::LoadSerializedData(const char* filename)
 {
 	logger::info("Loading data from {}", filename);
 
-	std::unique_lock lock_inv(inventory_stacks_mutex_);
-	std::unique_lock lock_var(applied_variants_mutex_);
-	std::unique_lock lock_queue(queue_mutex_);
-
-	inventory_stacks.clear();
-	applied_variants.clear();
-	variants_queue.clear();
+	ClearData();
 
 	Serialization::Data saved_data;
 	Serialization::loadDataBinary(saved_data, filename);
-	logger::info("Saved data loaded with applied size {}", saved_data.applied.size());
-	logger::info("Saved data loaded with inventory size {}", saved_data.inventory.size());
-	logger::info("Saved data loaded with lookup size {}", saved_data.lookup.size());
 
 	// loop over data.applied and data.inventory and populate applied_variants and inventory_stacks
 	for (const auto& [refid, model_index] : saved_data.applied) {
@@ -88,14 +90,59 @@ void Manager::LoadSerializedData(const char* filename)
 void Manager::SerializeData(const char* filename)
 {
 	const auto file_path = Serialization::serialization_path + filename;
-	std::shared_lock lock_inv(inventory_stacks_mutex_);
-	std::shared_lock lock_var(applied_variants_mutex_);
-	std::shared_lock lock_queue(queue_mutex_);
 
 	const auto model_map = GetModelPathMap();
 
+	std::unique_lock lock_inv(inventory_stacks_mutex_);
+	std::unique_lock lock_var(applied_variants_mutex_);
+
 	const Serialization::Data data(model_map, applied_variants, inventory_stacks);
 	Serialization::saveDataBinary(data, file_path);
+}
+
+void Manager::SyncInventory(RE::TESObjectREFR* inventory_owner)
+{
+	std::map<FormID,int32_t> actual_inventory;
+	const auto inv = inventory_owner->GetInventory();
+	for (const auto& [bound,entry] : inv) {
+		actual_inventory[bound->GetFormID()] = entry.first;
+	}
+	std::unique_lock lock(inventory_stacks_mutex_);
+	// if we have less->add nullptr, if we have more->remove
+	for (const auto& [item, stack] : inventory_stacks[inventory_owner->GetFormID()]) {
+		const auto actual_count = actual_inventory.contains(item) ? actual_inventory[item] : 0;
+		const auto stack_count = static_cast<int32_t>(stack.size());
+        if (const auto bound = RE::TESForm::LookupByID<RE::TESBoundObject>(item); !bound) {
+			logger::warn("Bound object not found: {:x}", item);
+			continue;
+		}
+		if (actual_count > stack_count) {
+			auto diff = actual_count - stack_count;
+			while (diff > 0) {
+				AddToStack(inventory_owner->GetFormID(), item, nullptr);
+				--diff;
+			}
+		}
+		else if (actual_count < stack_count) {
+			auto diff = stack_count - actual_count;
+			while (diff > 0) {
+				RemoveFromStack(inventory_owner->GetFormID(), item);
+				--diff;
+			}
+		}
+	}
+}
+
+void Manager::AddToStack(const RefID owner_id, const FormID item_id, const variant* a_variant)
+{
+    inventory_stacks[owner_id][item_id].push_back(a_variant);
+}
+
+void Manager::RemoveFromStack(RefID owner_id, FormID item_id)
+{
+	if (!inventory_stacks[owner_id][item_id].empty()) {
+		inventory_stacks[owner_id][item_id].pop_back();
+	}
 }
 
 void Manager::PreLoadGame() {
@@ -150,7 +197,6 @@ void Manager::Process(RE::TESBoundObject* base, const RefID id) {
 	    std::unique_lock lock(applied_variants_mutex_);
         applied_variants[id] = variant;
     }
-	else logger::warn("No variant found for {}", id);
     delete wrapper;
 }
 
@@ -160,51 +206,57 @@ void Manager::Process(RE::TESObjectARMA* base, const RE::FormID id) const {
     delete wrapper;
 }
 
-void Manager::UpdateStackOnPickUp(const RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, int32_t a_count)
+void Manager::HandleItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count)
 {
 
 	const auto base = a_obj->GetBaseObject();
 	const auto obj_refid = a_obj->GetFormID();
-	const auto owner_refid = a_owner->GetFormID();
 
     // TODO: discuss whether this should have been already stored
-	const auto* variant = GetAppliedVariant(obj_refid );
-	if (!variant) {
-		logger::warn("No variant found for {}", obj_refid );
-		return;
-	}
+	const auto* a_variant = GetAppliedVariant(obj_refid);
 
-	std::unique_lock lock(inventory_stacks_mutex_);
-    while (a_count>0) {
-		logger::trace("Add.Owner: {} {:x}, Item: {:x}", a_owner->GetName(),owner_refid, obj_refid);
-        inventory_stacks[owner_refid][base->GetFormID()].push_back(variant);
-		a_count--;
-    }
-    for (const auto& item : inventory_stacks[owner_refid][base->GetFormID()]) {
-		if (item && item->model) logger::info("Stack: {}", item->model);
+#ifndef NDEBUG
+    if (!a_variant ) {
+		logger::trace("No variant found for {}", obj_refid);
+		// return; Don't return. Need to add nullptr to the stack.
 	}
+#endif
+	std::vector<const variant*> variant_vector;
+	for (int i = 0; i < a_count; ++i) {
+		variant_vector.push_back(a_variant);
+	}
+	UpdateStackOnAdd(a_owner,base,a_count,variant_vector);
 
-	if (std::unique_lock lock2(applied_variants_mutex_);
+	if (std::unique_lock lock(applied_variants_mutex_);
         applied_variants.contains(a_obj->GetFormID())) {
         applied_variants.erase(obj_refid);
 	}
 }
 
-void Manager::UpdateStackOnDrop(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, int32_t a_count)
+void Manager::UpdateStackOnAdd(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, int32_t a_count, const std::vector<const variant*>& a_variant_vector)
 {
-	const auto owner_refid = a_owner->GetFormID();
-	const auto obj_refid = a_obj->GetFormID();
+	SyncInventory(a_owner);
+	size_t index = 0;
+	std::unique_lock lock(inventory_stacks_mutex_);
+	for (int i = 0; i < a_count; ++i) {
+		if (index >= a_variant_vector.size()) {
+			AddToStack(a_owner->GetFormID(), a_obj->GetFormID(), nullptr);
+		}
+		else {
+			AddToStack(a_owner->GetFormID(), a_obj->GetFormID(), a_variant_vector[index]);
+			++index;
+		}
+	}
+}
 
-	std::unique_lock lock1(inventory_stacks_mutex_);
-    while (a_count>0) {
-		logger::trace("Remove. Owner: {} {:x}, Item: {:x}", a_owner->GetName(),owner_refid, obj_refid);
-        if (!inventory_stacks[owner_refid][obj_refid].empty()) {
-            inventory_stacks[owner_refid][obj_refid].pop_back();
-            logger::trace("Stack size: {}", inventory_stacks[owner_refid][obj_refid].size());
-			a_count--;
-        }
-        else break;
-    }
+void Manager::UpdateStackOnRemove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, int32_t a_count)
+{
+	SyncInventory(a_owner);
+	std::unique_lock lock(inventory_stacks_mutex_);
+	for (int i = 0; i < a_count; ++i) {
+		RemoveFromStack(a_owner->GetFormID(), a_obj->GetFormID());
+	}
+
 }
 
 const variant* Manager::GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item)
@@ -221,10 +273,34 @@ const variant* Manager::GetInventoryModel(const RE::TESObjectREFR* a_owner, cons
 	return nullptr;
 }
 
-void Manager::SetInventoryBaseModel(RE::InventoryEntryData* a_entry)
+std::vector<const variant*> Manager::GetInventoryModels(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item, int32_t a_count)
+{
+	std::shared_lock lock(inventory_stacks_mutex_);
+	if (const auto it = inventory_stacks.find(a_owner->GetFormID());
+		it != inventory_stacks.end()) {
+		if (const auto it2 = it->second.find(a_item->GetFormID()); it2 != it->second.end()) {
+			if (!it2->second.empty()) {
+				// need to collect from the back of the vector <-> top of the stack
+				std::vector<const variant*> result;
+				if (static_cast<int32_t>(it2->second.size()) >= a_count) {
+                    // Copy the last a_count elements
+                    result.insert(result.end(), it2->second.end() - a_count, it2->second.end());
+                } else {
+                    // Add nullptrs to the beginning if count is larger than the stack size
+                    result.insert(result.end(), a_count - it2->second.size(), nullptr);
+                    result.insert(result.end(), it2->second.begin(), it2->second.end());
+                }
+				return result;
+			}
+		}
+	}
+	return {};
+}
+
+void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry)
 {
 	if (const auto base = a_entry->GetObject()) {
-		if (const auto variant = GetSingleton()->GetInventoryModel(RE::PlayerCharacter::GetSingleton(),base)) {
+		if (const auto variant = GetSingleton()->GetInventoryModel(owner,base)) {
 			if (const auto bm = base->As<RE::TESModel>()) {
 				bm->SetModel(variant->model);
 			}
@@ -237,9 +313,11 @@ void Manager::SetInventoryBaseModel(RE::InventoryEntryData* a_entry)
 			// TODO: Populate for other types
 
 			if (const auto inv = RE::Inventory3DManager::GetSingleton()) {
-                inv->Clear3D();
-                inv->GetRuntimeData().loadedModels.clear();
-                inv->UpdateItem3D(a_entry);
+                if (!inv->GetRuntimeData().loadedModels.empty()) {
+					inv->Clear3D();
+					inv->GetRuntimeData().loadedModels.clear();
+					inv->UpdateItem3D(a_entry);
+                }
 			}
 		}
     }
@@ -271,12 +349,6 @@ void Manager::AddToQueue(FormID formid, const variant* a_variant)
     variants_queue.push_back(pair);
 }
 
-bool Manager::HasVariant(const RefID refid)
-{
-	std::shared_lock lock(applied_variants_mutex_);
-	return applied_variants.contains(refid);
-}
-
 const variant* Manager::FetchFromQueue(const FormID formId)
 {
 	std::unique_lock lock(queue_mutex_);
@@ -292,6 +364,14 @@ const variant* Manager::FetchFromQueue(const FormID formId)
         }
     }
 	return nullptr;
+}
+
+void Manager::HandleItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count)
+{
+	if (const auto variant = GetInventoryModel(a_owner, a_obj)) {
+        AddToQueue(a_obj->GetFormID(), variant);
+	}
+	UpdateStackOnRemove(a_owner,a_obj,a_count);
 }
 
 const variant* Manager::GetVariant(const std::string& model_name)
