@@ -18,6 +18,7 @@ namespace Serialization {
         std::map<uint32_t,std::string> lookup;
         std::map<uint32_t, uint32_t> applied;
         std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> inventory;
+		std::map<uint32_t, std::vector<uint32_t>> worldobject;
 
         // Make Boost.Serialization a friend so it can access private or protected members
         // if needed. For public members, this is not strictly necessary.
@@ -30,10 +31,14 @@ namespace Serialization {
             ar & lookup;
             ar & applied;
             ar & inventory;
+			ar& worldobject;
         }
 
 		Data() = default;
-		Data(const std::map<std::string, uint32_t>& modelpaths, const std::map<RefID, const variant*>& applied_variants, const std::map<RefID, inventory_stack>& inventory_variants);
+		Data(const std::map<std::string, uint32_t>& modelpaths, 
+            const std::map<RefID, const variant*>& applied_variants, 
+            const std::map<RefID, inventory_stack>& inventory_variants,
+			const std::map<RefID, v_variant>& worldobject_stacks);
 
     };
     void saveDataBinary(const Data &data, const std::string &filename);

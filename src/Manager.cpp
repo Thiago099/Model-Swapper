@@ -18,9 +18,12 @@ std::map<std::string, uint32_t> Manager::GetModelPathMap(){
 	std::map<std::string, uint32_t> model_map;
 	std::set<const variant*> uniqueVariants;
 
-	uint32_t index = 0;
+	model_map[""] = 0;
+
+	uint32_t index = 1;
 	for (std::shared_lock lock(applied_variants_mutex_);
         const auto& a_variant : applied_variants | std::views::values) {
+		if (!a_variant) continue;
 		if (uniqueVariants.insert(a_variant).second) {
 			model_map[a_variant->model] = index;
 			++index;
@@ -30,6 +33,7 @@ std::map<std::string, uint32_t> Manager::GetModelPathMap(){
 	for (std::shared_lock lock(inventory_stacks_mutex_); const auto& stack : inventory_stacks | std::views::values) {
         for (const auto& item : stack | std::views::values) {
             for (const auto& a_variant : item) {
+				if (!a_variant) continue;
                 if (uniqueVariants.insert(a_variant).second) {
                     model_map[a_variant->model] = index;
                     ++index;
@@ -37,6 +41,16 @@ std::map<std::string, uint32_t> Manager::GetModelPathMap(){
             }
         }
     }
+
+	for (std::shared_lock lock(applied_variants_mutex_); const auto & stack : worldobject_stacks | std::views::values) {
+		for (const auto& a_variant : stack) {
+			if (!a_variant) continue;
+			if (uniqueVariants.insert(a_variant).second) {
+				model_map[a_variant->model] = index;
+				++index;
+			}
+		}
+	}
     
 	return model_map;
 }
@@ -51,6 +65,9 @@ void Manager::LoadSerializedData(const char* filename)
 	Serialization::Data saved_data;
 	Serialization::loadDataBinary(saved_data, filename);
 
+	std::unique_lock lock_inv(inventory_stacks_mutex_);
+	std::unique_lock lock_var(applied_variants_mutex_);
+
 	// loop over data.applied and data.inventory and populate applied_variants and inventory_stacks
 	for (const auto& [refid, model_index] : saved_data.applied) {
 		if (!saved_data.lookup.contains(model_index)) {
@@ -59,7 +76,10 @@ void Manager::LoadSerializedData(const char* filename)
 		}
 		const auto& model_name = saved_data.lookup.at(model_index);
 		// check if model_name is a variant in current runtime
-		if (const auto a_variant = GetVariant(model_name)) {
+		if (model_name.empty()) {
+			applied_variants[refid] = nullptr;
+		}
+		else if (const auto a_variant = GetVariant(model_name)) {
 			applied_variants[refid] = a_variant;
 		}
 		else {
@@ -75,8 +95,10 @@ void Manager::LoadSerializedData(const char* filename)
 					continue;
 				}
 				const auto& model_name = saved_data.lookup.at(model_index);
-				// check if model_name is a variant in current runtime
-				if (const auto a_variant = GetVariant(model_name)) {
+				if (model_name.empty()) {
+					inventory_stacks[owner_refid][item_refid].push_back(nullptr);
+		        }
+				else if (const auto a_variant = GetVariant(model_name)) {
 					inventory_stacks[owner_refid][item_refid].push_back(a_variant);
 				}
 				else {
@@ -85,6 +107,28 @@ void Manager::LoadSerializedData(const char* filename)
 			}
 		}
 	}
+
+	for (const auto& [owner_refid, model_indices] : saved_data.worldobject) {
+		for (const auto model_index : model_indices) {
+			if (!saved_data.lookup.contains(model_index)) {
+				logger::critical("Model index not found in lookup: {}", model_index);
+				continue;
+			}
+			const auto& model_name = saved_data.lookup.at(model_index);
+			// check if model_name is a variant in current runtime
+			if (model_name.empty()) {
+				worldobject_stacks[owner_refid].push_back(nullptr);
+		    }
+			else if (const auto a_variant = GetVariant(model_name)) {
+				worldobject_stacks[owner_refid].push_back(a_variant);
+			}
+			else {
+				logger::critical("Model name not found in sources: {}", model_name);
+			}
+		}
+	}
+
+
 }
 
 void Manager::SerializeData(const char* filename)
@@ -96,7 +140,7 @@ void Manager::SerializeData(const char* filename)
 	std::unique_lock lock_inv(inventory_stacks_mutex_);
 	std::unique_lock lock_var(applied_variants_mutex_);
 
-	const Serialization::Data data(model_map, applied_variants, inventory_stacks);
+	const Serialization::Data data(model_map, applied_variants, inventory_stacks, worldobject_stacks);
 	Serialization::saveDataBinary(data, file_path);
 }
 
