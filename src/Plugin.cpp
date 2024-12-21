@@ -10,9 +10,19 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
         Hooks::listenSave.store(true);
     }
     if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
+        
+        if (const auto ui = RE::UI::GetSingleton(); 
+            ui->IsMenuOpen(RE::MainMenu::MENU_NAME) ||
+            ui->IsMenuOpen(RE::JournalMenu::MENU_NAME)) {
+			logger::warn("Missing esps?");
+			return;
+		}
         Hooks::listenSave.store(false);
         Hooks::listenSave2.store(false);
-		manager->PreLoadGame();
+		Hooks::listenLoad.store(false);
+		const auto file2load = *Hooks::lastFile_ptr.load();
+		manager->PreLoadGame(file2load);
+        Hooks::listenLoad.store(true);
     }
     if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
         //auto form = RE::TESForm::LookupByID<RE::TESObjectMISC>(0x5ACE4);

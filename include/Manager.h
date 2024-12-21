@@ -40,7 +40,7 @@ public:
         return &singleton;
     }
 
-    void PreLoadGame();
+    void PreLoadGame(const std::string& filename);
     void SaveGame(const char* save_name);
 
     void Register(std::string key, variants value);

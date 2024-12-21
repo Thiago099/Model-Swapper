@@ -66,6 +66,9 @@ RE::BSEventNotifyControl Hooks::SaveHook::ProcessEvent(RE::SaveLoadManager* a_th
 
 void Hooks::SaveHook::PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_this, const char* a_fileName, char* a_dst, bool a_tmpSave, bool a_ignoreINI)
 {
+    if (listenLoad.load()) {
+		lastFile = a_fileName;
+    }
 	if (listenSave2.load()) {
 		listenSave2.store(false);
 	    logger::trace("SaveHook::PrepareFileSavePath");

@@ -52,6 +52,9 @@ namespace Hooks {
     };
     inline std::atomic<bool> listenSave = false;
     inline std::atomic<bool> listenSave2 = false;
+    inline std::atomic<bool> listenLoad = true;
+    inline std::string lastFile;
+	inline std::atomic<std::string*> lastFile_ptr{ &lastFile };
 
 
     template <typename RefType>

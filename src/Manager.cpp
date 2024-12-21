@@ -208,25 +208,16 @@ std::vector<const variant*> Manager::GetTopOfStack(const std::vector<const varia
 	return result;
 }
 
-void Manager::PreLoadGame() {
-	// TODO: We don't know if the player is loading the last save or not
-    const auto saveLoadManager = RE::SaveLoadManager::GetSingleton();
-	saveLoadManager->PopulateSaveList();
-    auto newSave = Str::CopySaveFileNameWithoutExtension(saveLoadManager->lastFileFullName);
+void Manager::PreLoadGame(const std::string& filename) {
+	logger::info("PreLoadGame started. Filename: {}", filename.c_str());
 
-	const auto file_path = Serialization::serialization_path + newSave;
-
+	const auto file_path = Serialization::serialization_path + filename;
 	try {
 	    LoadSerializedData(file_path.c_str());
 	}
 	catch (const std::exception& e) {
 		logger::error("Failed to load data: {}", e.what());
 	}
-
-    logger::trace("new: {}", newSave);
-
-    delete lastSave;
-    lastSave = newSave;
 	logger::info("PreLoadGame completed");
 }
 
