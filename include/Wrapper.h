@@ -14,22 +14,21 @@ using models = std::map<std::string, variants>;
 
 class AVObject {
 public:
+    virtual ~AVObject() = default;
     virtual void Reset() = 0;
-    virtual void Match(models models, int variant) = 0;
+    virtual const variant* Match(const models& models, int variant) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
 
-inline variant* find(models& models, const char* str, uint32_t seed) {
-    auto key = Str::processString(str);
-    auto it = models.find(key);
-    if (it != models.end()) {
+inline variant* find(const models& models, const char* str, const uint32_t seed) {
+    const auto key = Str::processString(str);
+    if (const auto it = models.find(key); it != models.end()) {
         std::mt19937 engine(seed);
         std::uniform_int_distribution<uint32_t> dist(0, it->second.size() - 1);
-        uint32_t random_number = dist(engine);
-        if (random_number < it->second.size()) {
+        if (const uint32_t random_number = dist(engine); random_number < it->second.size()) {
 
-            auto result = it->second.at(random_number);
-            auto config = Config::GetSingleton();
+            const auto result = it->second.at(random_number);
+            const auto config = Config::GetSingleton();
 
             if (config->BypassTemporalActivation) {
                 return result;
@@ -62,7 +61,7 @@ inline variant* find(models& models, const char* str, uint32_t seed) {
     return nullptr;
 }
 
-class AVObjectARMA : public AVObject {
+class AVObjectARMA final : public AVObject {
     const char* initialMaleThirdPersonModle = nullptr;
     const char* initialFemaleThirdPersonModle = nullptr;
     const char* initialMaleFirstPersonModle = nullptr;
@@ -70,9 +69,10 @@ class AVObjectARMA : public AVObject {
     RE::TESObjectARMA* base = nullptr;
 
 public:
-    ~AVObjectARMA() {
+    ~AVObjectARMA() override {
     }
-    AVObjectARMA(RE::TESObjectARMA* base) : base(base) {
+
+    explicit AVObjectARMA(RE::TESObjectARMA* base) : base(base) {
         if (!base) {
             return;    
         }
@@ -103,7 +103,8 @@ public:
     RE::TESForm* GetBase() override {
         return base;
     }
-    int64_t RequestModel2(const char* src) {
+
+    static int64_t RequestModel2(const char* src) {
         int64_t a2 = 0;
         int64_t a3 = 3;
         using func_t = int64_t(const char* , int64_t*, int64_t*);
@@ -111,43 +112,52 @@ public:
         return func(src, &a2, &a3);
     }
 
-    void Match(models models, int variant) override {
+    const variant* Match(const models& models, const int _variant) override {
+
+        const variant* result = nullptr;
+
         if (!base) {
-            return;
+			return nullptr;
         }
 
         if (base->bipedModels) {
-            if (auto item = find(models, initialMaleThirdPersonModle, variant)) {
+            if (const auto item = find(models, initialMaleThirdPersonModle, _variant)) {
+                result = item;
                 base->bipedModels[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (auto item = find(models, initialFemaleThirdPersonModle, variant)) {
+            if (const auto item = find(models, initialFemaleThirdPersonModle, _variant)) {
+                result = item;
                 base->bipedModels[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
         if (base->bipedModel1stPersons) {
 
-            if (auto item = find(models, initialMaleFirstPersonModle, variant)) {
+            if (const auto item = find(models, initialMaleFirstPersonModle, _variant)) {
+                result = item;
                 base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (auto item = find(models, initialFemaleFirstPersonModel, variant)) {
+            if (const auto item = find(models, initialFemaleFirstPersonModel, _variant)) {
+                result = item;
                 base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
+        return result;  // for now we don't need to return anything with NPCs
     }
 };
 
 
-class AVModel: public AVObject {
+class AVModel final : public AVObject {
     const char* model = nullptr;
     RE::TESForm* base = nullptr;
 public:
-    ~AVModel() {
+    ~AVModel() override {
     }
-    AVModel(RE::TESForm* base) : base(base) {
+
+    explicit AVModel(RE::TESForm* base) : base(base) {
         if (!base) {
             return;
         }
-        if (auto bm = base->As<RE::TESModel>()) {
+        if (const auto bm = base->As<RE::TESModel>()) {
             model = bm->GetModel();
         }
     }
@@ -160,15 +170,18 @@ public:
         }
     }
 
-    void Match(models models, int variant) override {
+    const variant* Match(const models& models, const int variant) override {
         if (!base) {
-            return;
+			return nullptr;
         }
-        if (auto bm = base->As<RE::TESModel>()) {
-            if (auto item = find(models, model, variant)) {
+        if (const auto bm = base->As<RE::TESModel>()) {
+            if (const auto item = find(models, model, variant)) {
                 bm->SetModel(item->model);
+				logger::info("Applied model {}", item->model);
+				return item;
             }
 
         }
+		return nullptr;
     }
 };

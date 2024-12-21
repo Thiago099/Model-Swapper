@@ -11,4 +11,7 @@ using namespace std::literals;
 using FormID = RE::FormID;
 using RefID = RE::FormID;
 
-const RefID player_refid = 20;
+constexpr RefID player_refid = 20;
+
+constexpr std::uint32_t kDataKey = 'MDLS';
+

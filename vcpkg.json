@@ -7,7 +7,8 @@
     "spdlog",
     "nlohmann-json",
     "rapidcsv",
-    "clib-util"
+    "clib-util",
+    "boost-serialization"
   ],
   "overrides": [
     {
