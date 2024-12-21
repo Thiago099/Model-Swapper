@@ -11,12 +11,6 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
     }
     if (message->type == SKSE::MessagingInterface::kPreLoadGame) {
         
-        if (const auto ui = RE::UI::GetSingleton(); 
-            ui->IsMenuOpen(RE::MainMenu::MENU_NAME) ||
-            ui->IsMenuOpen(RE::JournalMenu::MENU_NAME)) {
-			logger::warn("Missing esps?");
-			return;
-		}
         Hooks::listenSave.store(false);
         Hooks::listenSave2.store(false);
 		Hooks::listenLoad.store(false);
@@ -25,6 +19,12 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
         Hooks::listenLoad.store(true);
     }
     if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
+  //      if (const auto ui = RE::UI::GetSingleton(); 
+  //          ui->IsMenuOpen(RE::MainMenu::MENU_NAME) ||
+  //          ui->IsMenuOpen(RE::JournalMenu::MENU_NAME)) {
+		//	logger::warn("Missing esps?");
+		//	return;
+		//}
         //auto form = RE::TESForm::LookupByID<RE::TESObjectMISC>(0x5ACE4);
         //auto player = RE::PlayerCharacter::GetSingleton();
 
