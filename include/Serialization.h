@@ -5,9 +5,6 @@
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/version.hpp>
 #include "Wrapper.h"
-using variantId = int32_t;
-using v_variant = std::vector<variantId>;
-using inventory_stack = std::map<FormID, v_variant>;
 
 namespace Serialization {
 

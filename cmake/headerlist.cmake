@@ -11,4 +11,5 @@ set(HEADER_FILES
 	include/Serialization.h
 	include/UI.h
 	include/SKSEMenuFramework.h
+	include/Model.h
 )
