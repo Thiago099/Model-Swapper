@@ -105,7 +105,7 @@ void Manager::SyncInventory(RE::TESObjectREFR* inventory_owner)
 	}
 }
 
-void Manager::AddToStack(const RefID owner_id, const FormID item_id, int32_t a_variant) {
+void Manager::AddToStack(const RefID owner_id, const FormID item_id, variantId a_variant) {
     inventory_stacks[owner_id][item_id].push_back(a_variant);
 }
 
@@ -121,8 +121,8 @@ v_variant& Manager::GetWOStack(const RefID refid)
 	return world_object_stacks[refid];
 }
 
-std::vector<int32_t> Manager::GetTopOfStack(v_variant& stack, const uint32_t count) {
-	std::vector<int32_t> result;
+v_variant Manager::GetTopOfStack(v_variant& stack, const int32_t count) {
+    v_variant result;
 	if (static_cast<uint32_t>(stack.size()) >= count) {
         // Copy the last a_count elements
         result.insert(result.end(), stack.end() - count, stack.end());
@@ -171,7 +171,7 @@ void Manager::Register(std::string key, variants value) {
     }
 }
 
-void Manager::Apply(RE::TESForm* base, int32_t variant) {
+void Manager::Apply(RE::TESForm* base, variantId variant) {
     if (auto obj = base->As<RE::TESObjectARMO>()) {
         ApplyImpl(obj, variant);
     } else if (auto obj = base->As<RE::TESObjectARMA>()) {
@@ -251,7 +251,7 @@ int32_t Manager::ProcessImpl(RE::TESForm* base, RE::FormID id) const {
     return result;
 }
 
-void Manager::ApplyImpl(RE::TESObjectARMA* base, int32_t id) const {
+void Manager::ApplyImpl(RE::TESObjectARMA* base, variantId id) const {
     const auto wrapper = new AVObjectARMA(base);
     if (id != -1) {
         wrapper->Apply(sources, id);
@@ -259,7 +259,7 @@ void Manager::ApplyImpl(RE::TESObjectARMA* base, int32_t id) const {
     delete wrapper;
 }
 
-void Manager::ApplyImpl(RE::TESObjectARMO* base, int32_t id) const {
+void Manager::ApplyImpl(RE::TESObjectARMO* base, variantId id) const {
     const auto wrapper = new AVObjectARMO(base);
     if (id != -1) {
         wrapper->Apply(sources, id);
@@ -267,7 +267,7 @@ void Manager::ApplyImpl(RE::TESObjectARMO* base, int32_t id) const {
     delete wrapper;
 }
 
-void Manager::ApplyImpl(RE::TESObjectWEAP* base, int32_t id) const {
+void Manager::ApplyImpl(RE::TESObjectWEAP* base, variantId id) const {
     const auto wrapper = new AVObjectWEAP(base);
     if (id != -1) {
         wrapper->Apply(sources, id);
@@ -275,7 +275,7 @@ void Manager::ApplyImpl(RE::TESObjectWEAP* base, int32_t id) const {
     delete wrapper;
 }
 
-void Manager::ApplyImpl(RE::TESForm* base, int32_t id) const {
+void Manager::ApplyImpl(RE::TESForm* base, variantId id) const {
     const auto wrapper = new AVModel(base);
     if (id != -1) {
         wrapper->Apply(sources, id);
@@ -406,11 +406,11 @@ const int32_t Manager::GetAppliedVariant(RE::TESObjectREFR* refr, const RefID id
 	return -1;
 }
 
-void Manager::ApplyVariant(RE::TESBoundObject* base, const RefID id, int32_t a_variant) {
+void Manager::ApplyVariant(RE::TESBoundObject* base, const RefID id, variantId a_variant) {
     Apply(base, a_variant);
 }
 
-void Manager::AddToQueue(FormID formid, const std::vector<int32_t>& variant_vector) {
+void Manager::AddToQueue(FormID formid, v_variant& variant_vector) {
 	std::unique_lock lock(queue_mutex_);
 	const auto pair = std::make_pair(formid, variant_vector);
     variants_queue.push_back(pair);
@@ -435,7 +435,7 @@ v_variant Manager::FetchFromQueue(const FormID formId)
 
 void Manager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count)
 {
-	if (const auto variants = GetInventoryModels(a_owner, a_obj,a_count);!variants.empty()) {
+	if (auto variants = GetInventoryModels(a_owner, a_obj,a_count);!variants.empty()) {
         AddToQueue(a_obj->GetFormID(), variants);
 	}
 	UpdateStackOnRemove(a_owner,a_obj,a_count);
