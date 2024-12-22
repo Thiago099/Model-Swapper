@@ -15,7 +15,6 @@ namespace Serialization {
 	inline const std::string serialization_path = "Data/SKSE/Plugins/ModelSwapper/Serialization/";
 
 	struct Data {
-        std::map<uint32_t,std::string> lookup;
         std::map<uint32_t, int32_t> applied;
         std::map<uint32_t, std::map<uint32_t, std::vector<int32_t>>> inventory;
 		std::map<uint32_t, std::vector<int32_t>> worldobject;
@@ -28,7 +27,6 @@ namespace Serialization {
         template<class Archive>
         void serialize(Archive & ar, const unsigned int version) {
             (void)version; // Silence unreferenced parameter warning
-            ar & lookup;
             ar & inventory;
 			ar& worldobject;
         }

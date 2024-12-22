@@ -23,19 +23,14 @@ void __stdcall UI::InventoryStacks::Render() {
 
         bool found = false;
 
-        for (auto &item : value) {
-            for (auto variant : item.second) {
-                if (item.second.size() > 0) {
-                    found = true;
-                    break;
-                }
-            }
-            if (found) {
+        for (auto [key2, value2] : value) {
+        if (value2.size() > 0) {
+                found = true;
                 break;
             }
         }
         if (!found) {
-            return;
+            continue;
         }
 
         if (auto form = RE::TESForm::LookupByID<RE::TESObjectREFR>(key)) {

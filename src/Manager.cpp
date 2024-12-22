@@ -29,10 +29,6 @@ void Manager::LoadSerializedData(const char* filename)
 	for (const auto& [owner_refid, item_map] : saved_data.inventory) {
 		for (const auto& [item_refid, model_indices] : item_map) {
 			for (const auto model_index : model_indices) {
-				if (!saved_data.lookup.contains(model_index)) {
-					logger::critical("Model index not found in lookup: {}", model_index);
-					continue;
-				}
                 inventory_stacks[owner_refid][item_refid].push_back(model_index);
 			}
 		}
@@ -40,10 +36,6 @@ void Manager::LoadSerializedData(const char* filename)
 
 	for (const auto& [owner_refid, model_indices] : saved_data.worldobject) {
 		for (const auto model_index : model_indices) {
-			if (!saved_data.lookup.contains(model_index)) {
-				logger::critical("Model index not found in lookup: {}", model_index);
-				continue;
-			}
             world_object_stacks[owner_refid].push_back(model_index);
 		}
 	}
@@ -96,7 +88,9 @@ void Manager::SyncInventory(RE::TESObjectREFR* inventory_owner)
 }
 
 void Manager::AddToStack(const RefID owner_id, const FormID item_id, variantId a_variant) {
-    inventory_stacks[owner_id][item_id].push_back(a_variant);
+    if (a_variant != -1) {
+		inventory_stacks[owner_id][item_id].push_back(a_variant);
+	}
 }
 
 void Manager::RemoveFromStack(const RefID owner_id, const FormID item_id)
@@ -255,20 +249,15 @@ void Manager::ApplyImpl(RE::TESForm* base, variantId id) const {
 void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count)
 {
 
+	SyncInventory(a_owner);
+
 	const auto base = a_obj->GetBaseObject();
 	const auto obj_refid = a_obj->GetFormID();
 
     // TODO: discuss whether this should have been already stored
 	auto& wo_stack = GetWOStack(obj_refid);
 
-	// need to make sure wo_stack and a_count are in sync
 
-	if (wo_stack.size() < static_cast<size_t>(a_count)) {
-		wo_stack.insert(wo_stack.end(), a_count - wo_stack.size(), -1);
-	}
-	else if (wo_stack.size() > static_cast<size_t>(a_count)) {
-		wo_stack.erase(wo_stack.begin() + a_count, wo_stack.end());
-	}
 	UpdateStackOnAdd(a_owner,base,a_count,wo_stack);
 
 	if (std::unique_lock lock(applied_variants_mutex_);
@@ -277,19 +266,12 @@ void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj,
 	}
 }
 
-void Manager::UpdateStackOnAdd(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count, v_variant& a_variant_vector)
+void Manager::UpdateStackOnAdd(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count, v_variant& add_vector)
 {
-	SyncInventory(a_owner);
-	size_t index = 0;
 	std::unique_lock lock(inventory_stacks_mutex_);
-	for (int i = 0; i < a_count; ++i) {
-		if (index >= a_variant_vector.size()) {
-			AddToStack(a_owner->GetFormID(), a_obj->GetFormID(), -1);
-		}
-		else {
-			AddToStack(a_owner->GetFormID(), a_obj->GetFormID(), a_variant_vector[index]);
-			++index;
-		}
+    for (int i = 0; i < add_vector.size(); ++i) {
+        logger::trace("Add I: {}", add_vector[i]);
+		AddToStack(a_owner->GetFormID(), a_obj->GetFormID(), add_vector[i]);
 	}
 }
 
@@ -405,11 +387,11 @@ void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
         } else if (auto variant_vector = FetchFromQueue(base->GetFormID()); !variant_vector.empty()) {
             logger::trace("Queued");
             auto top_stack = GetTopOfStack(variant_vector, ref_count);
-            top_stack = top_stack.empty() ? std::vector<int32_t>(ref_count, -1) : top_stack;
+            top_stack = top_stack.empty() ? std::vector<int32_t>(ref_count) : top_stack;
             if (top_stack.back() == -1) {
                 auto id = Process(base, refid);
                 if (id != -1) {
-                Apply(base, id);
+					Apply(base, id);
                     world_object_stacks[refid].push_back(id);
                 }
 			} else {
@@ -429,7 +411,6 @@ void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
         if (id != -1) {
             Apply(base, id);
 		}
-
 	}
 
 }

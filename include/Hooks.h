@@ -115,18 +115,18 @@ RE::ObjectRefHandle* Hooks::MoveItemHooks<RefType>::RemoveItem(RefType* a_this, 
 	}
 
 	auto manager = Manager::GetSingleton();
-	if (!a_move_to_ref) {
-		if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
-		    manager->OnItemDrop(a_this,a_item,a_count);
-        }
-        else {
-            manager->UpdateStackOnRemove(a_this,a_item,a_count);
-        }
+	if (a_move_to_ref) {
+        auto inv_variants = manager->GetInventoryModels(a_this, a_item, a_count);
+        manager->UpdateStackOnRemove(a_this, a_item, a_count);
+        manager->UpdateStackOnAdd(a_move_to_ref, a_item, a_count, inv_variants);
 	}
 	else {
-		auto inv_variants = manager->GetInventoryModels(a_this, a_item,a_count);
-		manager->UpdateStackOnRemove(a_this, a_item, a_count);
-		manager->UpdateStackOnAdd(a_move_to_ref, a_item, a_count, inv_variants);
+        if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
+            manager->OnItemDrop(a_this, a_item, a_count);
+        } else {
+            manager->UpdateStackOnRemove(a_this, a_item, a_count);
+        }
+
 	}
 
 	return remove_item_(a_this, a_hidden_return_argument, a_item, a_count, a_reason, a_extra_list, a_move_to_ref, a_drop_loc, a_rotate);
@@ -138,11 +138,6 @@ void Hooks::MoveItemHooks<RefType>::addObjectToContainer(RefType* a_this, RE::TE
 	if (a_fromRefr || !a_this || !a_object || !a_object->IsInventoryObject() || a_count <= 0) {
 		return add_object_to_container_(a_this, a_object, a_extraList, a_count, a_fromRefr);
 	}
-	std::vector<int32_t> variants;
-	for (int i = 0; i < a_count; ++i) {
-		variants.push_back(-1);
-	}
-	Manager::GetSingleton()->UpdateStackOnAdd(a_this,a_object,a_count,variants);
 
 	return add_object_to_container_(a_this, a_object, a_extraList, a_count, a_fromRefr);
 }
