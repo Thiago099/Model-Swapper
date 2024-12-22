@@ -306,7 +306,7 @@ void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj,
 	const auto obj_refid = a_obj->GetFormID();
 
     // TODO: discuss whether this should have been already stored
-	const auto* a_variant = GetAppliedVariant(obj_refid);
+    const auto* a_variant = GetAppliedVariant(a_obj, obj_refid);
 	auto& wo_stack = GetWOStack(obj_refid);
 
 #ifndef NDEBUG
@@ -414,15 +414,20 @@ void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntry
     }
 }
 
-const variant* Manager::GetAppliedVariant(const RefID id)
+const variant* Manager::GetAppliedVariant(RE::TESObjectREFR* refr,const RefID id)
 {
-	std::shared_lock lock(applied_variants_mutex_);
+	//REMOVING THESE BRACKETS WILL RESULT ON A DEADLOCK
+	{
+		std::shared_lock lock(applied_variants_mutex_);
 
-    if (const auto it = applied_variants.find(id);
-        it != applied_variants.end()) {
-		return it->second;
+		if (const auto it = applied_variants.find(id);
+			it != applied_variants.end()) {
+			return it->second;
+		}
 	}
-
+    if (auto base = refr->GetBaseObject()) {
+        return Process(base, id);
+	}
 	return nullptr;
 }
 
@@ -492,16 +497,19 @@ void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
 	}
 
 	if (base->IsInventoryObject()) {
-        if (const auto ref_variant = GetAppliedVariant(refid)) {
+        if (const auto ref_variant = GetAppliedVariant(a_ref, refid)) {
+            logger::trace("Already applied");
             ApplyVariant(base, refid, ref_variant);
         } else if (const auto variant_vector = FetchFromQueue(base->GetFormID()); !variant_vector.empty()) {
+            logger::trace("Queued");
             auto top_stack = GetTopOfStack(variant_vector, ref_count);
             top_stack = top_stack.empty() ? std::vector<const variant*>(ref_count, nullptr) : top_stack;
             ApplyVariant(base, refid, top_stack.back());
             world_object_stacks[refid] = top_stack;
         } else {
+            logger::trace("None");
             Process(base, refid);
-            if (const auto applied_variant = GetAppliedVariant(refid)) {
+            if (const auto applied_variant = GetAppliedVariant(a_ref, refid)) {
                 world_object_stacks[refid] = std::vector(ref_count, applied_variant);
             } else {
                 world_object_stacks[refid] = std::vector<const variant*>(ref_count, nullptr);

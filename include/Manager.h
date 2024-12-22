@@ -6,7 +6,7 @@
 
 class Manager {
 
-    const char* lastSave=nullptr;
+    const char* lastSave = "NEW";
 
 	std::shared_mutex inventory_stacks_mutex_;
 	std::shared_mutex applied_variants_mutex_;
@@ -58,7 +58,7 @@ public:
 
     const variant* GetVariant(const std::string& model_name);
 	void ProcessReference(RE::TESObjectREFR* a_ref);
-	const variant* GetAppliedVariant(RefID id);
+	const variant* GetAppliedVariant(RE::TESObjectREFR* refr, RefID id);
 
     void AddToQueue(FormID formid, const v_variant& variant_vector);
 	v_variant FetchFromQueue(FormID formId);

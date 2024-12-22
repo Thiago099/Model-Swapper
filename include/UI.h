@@ -4,7 +4,10 @@
 
 namespace UI {
     void Install();
-    namespace Example1 {
+    namespace InventoryStacks {
+        void __stdcall Render();
+    }
+    namespace Queue {
         void __stdcall Render();
     }
 
