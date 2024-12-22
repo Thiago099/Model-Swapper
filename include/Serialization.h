@@ -6,7 +6,7 @@
 #include <boost/serialization/version.hpp>
 #include "Wrapper.h"
 
-using v_variant = std::vector<const variant*>;
+using v_variant = std::vector<int32_t>;
 using inventory_stack = std::map<FormID, v_variant>;
 
 namespace Serialization {
@@ -16,9 +16,9 @@ namespace Serialization {
 
 	struct Data {
         std::map<uint32_t,std::string> lookup;
-        std::map<uint32_t, uint32_t> applied;
-        std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> inventory;
-		std::map<uint32_t, std::vector<uint32_t>> worldobject;
+        std::map<uint32_t, int32_t> applied;
+        std::map<uint32_t, std::map<uint32_t, std::vector<int32_t>>> inventory;
+		std::map<uint32_t, std::vector<int32_t>> worldobject;
 
         // Make Boost.Serialization a friend so it can access private or protected members
         // if needed. For public members, this is not strictly necessary.
@@ -35,8 +35,8 @@ namespace Serialization {
         }
 
 		Data() = default;
-		Data(const std::map<std::string, uint32_t>& modelpaths, 
-            const std::map<RefID, const variant*>& applied_variants, 
+		Data(
+            const std::map<RefID, int32_t>& applied_variants, 
             const std::map<RefID, inventory_stack>& inventory_variants,
 			const std::map<RefID, v_variant>& worldobject_stacks);
 

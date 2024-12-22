@@ -15,11 +15,12 @@ using models = std::map<std::string, variants>;
 class AVObject {
 public:
     virtual ~AVObject() = default;
-    virtual const variant* Match(const models& models, int variant) = 0;
+    virtual int32_t GetVariant(const models& models, int seed) = 0;
+    virtual void Apply(const models& models, int32_t variant) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
 
-inline variant* find(const models& models, const char* str, const uint32_t seed) {
+inline int32_t pickVariant(const models& models, const char* str, const uint32_t seed) {
     const auto key = Str::processString(str);
     if (const auto it = models.find(key); it != models.end()) {
         std::mt19937 engine(seed);
@@ -30,7 +31,7 @@ inline variant* find(const models& models, const char* str, const uint32_t seed)
             const auto config = Config::GetSingleton();
 
             if (config->BypassTemporalActivation) {
-                return result;
+                return random_number;
             }
 
             auto now = config->NowOverride.exists ? config->NowOverride : Time::now();
@@ -45,21 +46,31 @@ inline variant* find(const models& models, const char* str, const uint32_t seed)
  
             if (!result->startDate.exists || !now.exists || !result->endDate.exists) {
                 logger::trace("date is fault, fallback yes");
-                return result;
+                return random_number;
             }
             if (now.isBetweenMD(result->startDate, result->endDate)) {
                 logger::trace("is in between replacing");
-                return result;
+                return random_number;
             }
 
             logger::trace("not in between doing nothing");
             
-            return nullptr;
+            return random_number;
         }
+    }
+    return -1;
+}
+inline variant* getVariant(const models& models, const char* str, const uint32_t variant) {
+    const auto key = Str::processString(str);
+    if (const auto it = models.find(key); it != models.end()) {
+
+        if (variant < it->second.size()) {
+            return it->second[variant];
+        }
+        return nullptr;
     }
     return nullptr;
 }
-
 class AVObjectARMA final : public AVObject {
     const char* initialMaleThirdPersonModle = nullptr;
     const char* initialFemaleThirdPersonModle = nullptr;
@@ -96,38 +107,53 @@ public:
         const REL::Relocation<func_t> func{RELOCATION_ID(74039, 75781)};
         return func(src, &a2, &a3);
     }
-
-    const variant* Match(const models& models, const int _variant) override {
-
-        const variant* result = nullptr;
-
+    int32_t GetVariant(const models& models, int seed) override{
         if (!base) {
-			return nullptr;
+            return -1;
         }
 
         if (base->bipedModels) {
-            if (const auto item = find(models, initialMaleThirdPersonModle, _variant)) {
-                result = item;
+            if (const auto item = pickVariant(models, initialMaleThirdPersonModle, seed); item != -1) {
+                return item;
+            }
+            if (const auto item = pickVariant(models, initialFemaleThirdPersonModle, seed); item != -1) {
+                return item;
+            }
+        }
+        if (base->bipedModel1stPersons) {
+            if (const auto item = pickVariant(models, initialMaleFirstPersonModle, seed); item != -1) {
+                return item;
+
+            }
+            if (const auto item = pickVariant(models, initialFemaleFirstPersonModel, seed); item != -1) {
+                return item;
+            }
+        }
+        return -1;
+    }
+    virtual void Apply(const models& models, int32_t _variant) override {
+        if (!base) {
+            return;
+        }
+
+        if (base->bipedModels) {
+            if (const auto item = getVariant(models, initialMaleThirdPersonModle, _variant)) {
                 base->bipedModels[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (const auto item = find(models, initialFemaleThirdPersonModle, _variant)) {
-                result = item;
+            if (const auto item = getVariant(models, initialFemaleThirdPersonModle, _variant)) {
                 base->bipedModels[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
         if (base->bipedModel1stPersons) {
-
-            if (const auto item = find(models, initialMaleFirstPersonModle, _variant)) {
-                result = item;
+            if (const auto item = getVariant(models, initialMaleFirstPersonModle, _variant)) {
                 base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(item->model);
             }
-            if (const auto item = find(models, initialFemaleFirstPersonModel, _variant)) {
-                result = item;
+            if (const auto item = getVariant(models, initialFemaleFirstPersonModel, _variant)) {
                 base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(item->model);
             }
         }
-        return result;  // for now we don't need to return anything with NPCs
     }
+
 };
 
 
@@ -149,19 +175,28 @@ public:
 
     RE::TESForm* GetBase() override { return base; }
 
-    const variant* Match(const models& models, const int variant) override {
+    int32_t GetVariant(const models& models, int seed) override {
         if (!base) {
-			return nullptr;
+            return -1;
         }
-        if (const auto bm = base->As<RE::TESModel>()) {
-            if (const auto item = find(models, model, variant)) {
-                bm->SetModel(item->model);
-				logger::info("Applied model {}", item->model);
-				return item;
-            }
 
+        if (const auto bm = base->As<RE::TESModel>()) {
+            if (const auto item = pickVariant(models, model, seed)) {
+                return item;
+            }
         }
-		return nullptr;
+        return -1;
+    }
+    virtual void Apply(const models& models, int32_t _variant) override {
+        if (!base) {
+            return;
+        }
+
+        if (const auto bm = base->As<RE::TESModel>()) {
+            if (const auto item = getVariant(models, model, _variant)) {
+                bm->SetModel(item->model);
+            }
+        }
     }
 };
 
@@ -184,20 +219,31 @@ public:
 
     RE::TESForm* GetBase() override { return base; }
 
-    const variant* Match(const models& models, const int _variant) override {
-        const variant* result = nullptr;
+    int32_t GetVariant(const models& models, int seed) override {
         if (!base) {
-            return result;
+            return -1;
         }
-        if (auto item = find(models, male, _variant)) {
-            result = item;
+
+        if (auto item = pickVariant(models, male, seed)) {
+            return item;
+        }
+        if (auto item = pickVariant(models, female, seed)) {
+            return item;
+        }
+
+        return -1;
+    }
+    virtual void Apply(const models& models, int32_t _variant) override {
+        if (!base) {
+            return;
+        }
+
+        if (auto item = getVariant(models, male, _variant)) {
             base->worldModels[RE::SEXES::kMale].SetModel(item->model);
         }
-        if (auto item = find(models, female, _variant)) {
-            result = item;
+        if (auto item = getVariant(models, female, _variant)) {
             base->worldModels[RE::SEXES::kFemale].SetModel(item->model);
         }
-        return result;
     }
 };
 
@@ -218,20 +264,30 @@ public:
     }
     RE::TESForm* GetBase() override { return base; }
 
-
-    const variant* Match(const models& models, const int _variant) override {
-        const variant* result = nullptr;
+        int32_t GetVariant(const models& models, int seed) override {
         if (!base) {
-            return result;
+            return -1;
         }
-        if (auto item = find(models, firstPersonModel, _variant)) {
-            result = item;
+
+        if (auto item = pickVariant(models, firstPersonModel, seed)) {
+            return item;
+        }
+        if (auto item = pickVariant(models, model, seed)) {
+            return item;
+        }
+
+        return -1;
+    }
+    virtual void Apply(const models& models, int32_t _variant) override {
+        if (!base) {
+            return;
+        }
+
+        if (auto item = getVariant(models, firstPersonModel, _variant)) {
             base->firstPersonModelObject->SetModel(item->model);
         }
-        if (auto item = find(models, model, _variant)) {
-            result = item;  
+        if (auto item = getVariant(models, model, _variant)) {
             base->SetModel(item->model);
         }
-        return result;
     }
 };

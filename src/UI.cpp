@@ -22,7 +22,7 @@ void __stdcall UI::InventoryStacks::Render() {
             for (auto &item : value) {
                 for (auto variant : item.second) {
                     if (variant) {
-                        ImGui::Text(std::format("            Model: {}", variant->model).c_str());
+                        ImGui::Text(std::format("            Model: {}", variant).c_str());
                     }
                 }
             }
@@ -37,7 +37,7 @@ void __stdcall UI::Queue::Render() {
     for (auto [key, value] : manager->variants_queue) {
         ImGui::Text(std::format("Form: {:x}", key).c_str());
         for (auto item : value) {
-            ImGui::Text(std::format("    Form: {}", item->model).c_str());
+            ImGui::Text(std::format("    Form: {}", item).c_str());
         }
     }
 }

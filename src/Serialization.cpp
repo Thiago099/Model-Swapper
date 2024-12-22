@@ -24,32 +24,23 @@ void Serialization::loadDataBinary(Data& data, const std::string& filename) {
 }
 
 
-Serialization::Data::Data(const std::map<std::string, uint32_t>& modelpaths, const std::map<RefID, const variant*>& applied_variants, const std::map<RefID, inventory_stack>& inventory_variants, const std::map<RefID, v_variant>& worldobject_stacks) {
+Serialization::Data::Data(const std::map<RefID, int32_t>& applied_variants, const std::map<RefID, inventory_stack>& inventory_variants, const std::map<RefID, v_variant>& worldobject_stacks) {
 
-	for (const auto& [index, model] : modelpaths) {
-		lookup[model] = index;
-	}
 
     for (const auto& [refid, variant] : applied_variants) {
-		std::string model_name = variant ? variant->model : "";
-		if (!modelpaths.contains(model_name)) continue;
-		applied[refid] = modelpaths.at(model_name);
+        applied[refid] = variant;
 	}
 	for (const auto& [refid, inventory_] : inventory_variants) {
 		for (const auto& [formid, variants] : inventory_) {
 			for (const auto& variant : variants) {
-				std::string model_name = variant ? variant->model : "";
-				if (!modelpaths.contains(model_name)) continue;
-				inventory[refid][formid].push_back(modelpaths.at(model_name));
+				inventory[refid][formid].push_back(variant);
 			}
 		}
 	}
 
 	for (const auto& [refid, stack] : worldobject_stacks) {
 		for (const auto& variant : stack) {
-			std::string model_name = variant ? variant->model : "";
-			if (!modelpaths.contains(model_name)) continue;
-			worldobject[refid].push_back(modelpaths.at(model_name));
+            worldobject[refid].push_back(variant);
 		}
 	}
 }
