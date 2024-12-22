@@ -25,12 +25,11 @@ class Manager {
     static v_variant GetTopOfStack(v_variant& stack, int32_t count);
     v_variant& GetWOStack(RefID refid);
 
-	void ApplyVariant(RE::TESBoundObject* base, RefID id, variantId a_variant);
-    variantId ProcessImpl(RE::TESForm* base, RE::FormID id) const;
     void ApplyImpl(RE::TESObjectARMA* base, variantId id) const;
     void ApplyImpl(RE::TESObjectARMO* base, variantId id) const;
     void ApplyImpl(RE::TESObjectWEAP* base, variantId id) const;
     void ApplyImpl(RE::TESForm* base, variantId id) const;
+    variantId ProcessImpl(RE::TESForm* base, RE::FormID id) const;
     variantId ProcessImpl(RE::TESObjectARMA* base, RE::FormID id) const;
     variantId ProcessImpl(RE::TESObjectARMO* base, RE::FormID id) const;
     variantId ProcessImpl(RE::TESObjectWEAP* base, RE::FormID id) const;
@@ -40,7 +39,6 @@ public:
     models sources;
     std::map<RefID, inventory_stack> inventory_stacks;
     std::map<RefID, v_variant> world_object_stacks;
-    std::map<RefID, variantId> applied_variants;
     std::vector<std::pair<FormID, v_variant>> variants_queue;
 
     static Manager* GetSingleton() {
@@ -53,7 +51,7 @@ public:
 
     void Register(std::string key, variants value);
     void Apply(RE::TESForm* base, variantId variant);
-    const variantId ProcessNew(RE::TESForm* base, RefID id);
+    const variantId Process(RE::TESForm* base, RefID id);
 
 
     const variantId GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
@@ -61,7 +59,6 @@ public:
     void SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry);
 
 	void ProcessReference(RE::TESObjectREFR* a_ref);
-    const variantId GetAppliedVariant(RE::TESObjectREFR* refr, RefID id);
 
     void AddToQueue(FormID formid, v_variant& variant_vector);
 	v_variant FetchFromQueue(FormID formId);

@@ -10,7 +10,6 @@ void Manager::ClearData()
 	std::unique_lock lock_queue(queue_mutex_);
 
 	inventory_stacks.clear();
-	applied_variants.clear();
 	variants_queue.clear();
 }
 
@@ -26,15 +25,6 @@ void Manager::LoadSerializedData(const char* filename)
 
 	std::unique_lock lock_inv(inventory_stacks_mutex_);
 	std::unique_lock lock_var(applied_variants_mutex_);
-
-	// loop over data.applied and data.inventory and populate applied_variants and inventory_stacks
-	for (const auto& [refid, model_index] : saved_data.applied) {
-		if (!saved_data.lookup.contains(model_index)) {
-			logger::critical("Model index not found in lookup: {}", model_index);
-			continue;
-		}
-        applied_variants[refid] = model_index;
-	}
 
 	for (const auto& [owner_refid, item_map] : saved_data.inventory) {
 		for (const auto& [item_refid, model_indices] : item_map) {
@@ -68,7 +58,7 @@ void Manager::SerializeData(const char* filename)
 	std::unique_lock lock_inv(inventory_stacks_mutex_);
 	std::unique_lock lock_var(applied_variants_mutex_);
 
-	const Serialization::Data data(applied_variants, inventory_stacks, world_object_stacks);
+	const Serialization::Data data(inventory_stacks, world_object_stacks);
 	Serialization::saveDataBinary(data, file_path);
 }
 
@@ -183,7 +173,7 @@ void Manager::Apply(RE::TESForm* base, variantId variant) {
     }
 
 }
-const int32_t Manager::ProcessNew(RE::TESForm * base, const RefID id) {
+const int32_t Manager::Process(RE::TESForm * base, const RefID id) {
 
     int32_t result = -1;
 
@@ -199,24 +189,12 @@ const int32_t Manager::ProcessNew(RE::TESForm * base, const RefID id) {
         result = ProcessImpl(base, id);
 	}
 
-	if (result == -1) {
-        return result;
-	}
-
-    if (base->IsInventoryObject()) {
-		std::unique_lock lock(applied_variants_mutex_);
-        applied_variants[id] = result;
-    }
-
     return result;
 }
 
 int32_t Manager::ProcessImpl(RE::TESObjectARMA* base, const RE::FormID id) const {
     const auto wrapper = new AVObjectARMA(base);
     int32_t result = wrapper->GetVariant(sources, id);
-    if (result != -1) {
-        wrapper->Apply(sources, result);
-    }
     delete wrapper;
     return result;
 }
@@ -224,9 +202,6 @@ int32_t Manager::ProcessImpl(RE::TESObjectARMA* base, const RE::FormID id) const
 int32_t Manager::ProcessImpl(RE::TESObjectARMO* base, RE::FormID id) const {
     const auto wrapper = new AVObjectARMO(base);
     int32_t result = wrapper->GetVariant(sources, id);
-    if (result != -1) {
-        wrapper->Apply(sources, result);
-    }
     delete wrapper;
     return result;
 }
@@ -234,9 +209,6 @@ int32_t Manager::ProcessImpl(RE::TESObjectARMO* base, RE::FormID id) const {
 int32_t Manager::ProcessImpl(RE::TESObjectWEAP* base, RE::FormID id) const {
     const auto wrapper = new AVObjectWEAP(base);
     int32_t result = wrapper->GetVariant(sources, id);
-    if (result != -1) {
-        wrapper->Apply(sources, result);
-	}
     delete wrapper;
     return result;
 }
@@ -244,9 +216,6 @@ int32_t Manager::ProcessImpl(RE::TESObjectWEAP* base, RE::FormID id) const {
 int32_t Manager::ProcessImpl(RE::TESForm* base, RE::FormID id) const {
     const auto wrapper = new AVModel(base);
     int32_t result = wrapper->GetVariant(sources, id);
-    if (result != -1) {
-        wrapper->Apply(sources, result);
-    }
     delete wrapper;
     return result;
 }
@@ -290,15 +259,8 @@ void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj,
 	const auto obj_refid = a_obj->GetFormID();
 
     // TODO: discuss whether this should have been already stored
-    const auto a_variant = GetAppliedVariant(a_obj, obj_refid);
 	auto& wo_stack = GetWOStack(obj_refid);
 
-#ifndef NDEBUG
-    if (!a_variant ) {
-		logger::trace("No variant found for {}", obj_refid);
-		// return; Don't return. Need to add nullptr to the stack.
-	}
-#endif
 	// need to make sure wo_stack and a_count are in sync
 
 	if (wo_stack.size() < static_cast<size_t>(a_count)) {
@@ -310,9 +272,8 @@ void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj,
 	UpdateStackOnAdd(a_owner,base,a_count,wo_stack);
 
 	if (std::unique_lock lock(applied_variants_mutex_);
-        applied_variants.contains(a_obj->GetFormID())) {
-        applied_variants.erase(obj_refid);
-		world_object_stacks.erase(obj_refid);
+        world_object_stacks.contains(a_obj->GetFormID())) {
+        world_object_stacks.erase(obj_refid);
 	}
 }
 
@@ -390,25 +351,7 @@ void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntry
     }
 }
 
-const int32_t Manager::GetAppliedVariant(RE::TESObjectREFR* refr, const RefID id) {
-	//REMOVING THESE BRACKETS WILL RESULT ON A DEADLOCK
-	{
-		std::shared_lock lock(applied_variants_mutex_);
 
-		if (const auto it = applied_variants.find(id);
-			it != applied_variants.end()) {
-			return it->second;
-		}
-	}
-    if (auto base = refr->GetBaseObject()) {
-        return ProcessNew(base, id);
-	}
-	return -1;
-}
-
-void Manager::ApplyVariant(RE::TESBoundObject* base, const RefID id, variantId a_variant) {
-    Apply(base, a_variant);
-}
 
 void Manager::AddToQueue(FormID formid, v_variant& variant_vector) {
 	std::unique_lock lock(queue_mutex_);
@@ -456,26 +399,37 @@ void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
 	}
 
 	if (base->IsInventoryObject()) {
-        if (const auto ref_variant = GetAppliedVariant(a_ref, refid)) {
+        if (auto ref_variant = GetWOStack(refid); ref_variant.size()>0) {
             logger::trace("Already applied");
-            ApplyVariant(base, refid, ref_variant);
+            Apply(base, ref_variant.back());
         } else if (auto variant_vector = FetchFromQueue(base->GetFormID()); !variant_vector.empty()) {
             logger::trace("Queued");
             auto top_stack = GetTopOfStack(variant_vector, ref_count);
             top_stack = top_stack.empty() ? std::vector<int32_t>(ref_count, -1) : top_stack;
-            ApplyVariant(base, refid, top_stack.back());
-            world_object_stacks[refid] = top_stack;
+            if (top_stack.back() == -1) {
+                auto id = Process(base, refid);
+                if (id != -1) {
+                Apply(base, id);
+                    world_object_stacks[refid].push_back(id);
+                }
+			} else {
+				Apply(base, top_stack.back());
+                world_object_stacks[refid] = top_stack;
+            }
         } else {
             logger::trace("None");
-            ProcessNew(base, refid);
-            if (const auto applied_variant = GetAppliedVariant(a_ref, refid)) {
-                world_object_stacks[refid] = std::vector(ref_count, applied_variant);
-            } else {
-                world_object_stacks[refid] = std::vector<int32_t>(ref_count, -1);
+            auto id = Process(base, refid);
+            if (id != -1) {
+                Apply(base, id);
+                world_object_stacks[refid].push_back(id);
             }
         }
     } else {
-        ProcessNew(base, refid);
+        auto id = Process(base, refid);
+        if (id != -1) {
+            Apply(base, id);
+		}
+
 	}
 
 }

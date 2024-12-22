@@ -24,12 +24,8 @@ void Serialization::loadDataBinary(Data& data, const std::string& filename) {
 }
 
 
-Serialization::Data::Data(const std::map<RefID, int32_t>& applied_variants, const std::map<RefID, inventory_stack>& inventory_variants, const std::map<RefID, v_variant>& worldobject_stacks) {
-
-
-    for (const auto& [refid, variant] : applied_variants) {
-        applied[refid] = variant;
-	}
+Serialization::Data::Data(const std::map<RefID, inventory_stack>& inventory_variants, const std::map<RefID, v_variant>& worldobject_stacks) {
+ 
 	for (const auto& [refid, inventory_] : inventory_variants) {
 		for (const auto& [formid, variants] : inventory_) {
 			for (const auto& variant : variants) {

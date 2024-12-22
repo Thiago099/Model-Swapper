@@ -39,7 +39,8 @@ bool Hooks::NpcSkinHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
                     if (const auto raceSkin = race->skin) {
                         for (const auto addon : raceSkin->armorAddons) {
                             const auto manager = Manager::GetSingleton();
-                            manager->ProcessNew(addon, ref->GetFormID());
+                            auto id = manager->Process(addon, ref->GetFormID());
+                            manager->Apply(obj, id);
                         }
                     }
                 }
@@ -47,7 +48,8 @@ bool Hooks::NpcSkinHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
                 if (const auto skin = npc->skin) {
                     for (const auto addon : skin->armorAddons) {
                         const auto manager = Manager::GetSingleton();
-                        manager->ProcessNew(addon, ref->GetFormID());
+                        auto id = manager->Process(addon, ref->GetFormID());
+                        manager->Apply(obj, id);
                     }
                 }
             }

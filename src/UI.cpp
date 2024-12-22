@@ -8,6 +8,7 @@ void UI::Install() {
     SKSEMenuFramework::SetSection("Model Swapper");
     SKSEMenuFramework::AddSectionItem("Inventory Stacks", InventoryStacks::Render);
     SKSEMenuFramework::AddSectionItem("Queue", Queue::Render);
+    SKSEMenuFramework::AddSectionItem("World Stacks", WorldStacks::Render);
 }
 
 
@@ -16,14 +17,45 @@ void __stdcall UI::InventoryStacks::Render() {
 
     auto manager = Manager::GetSingleton();
     for (auto &[key, value] : manager->inventory_stacks) {
-        ImGui::Text(std::format("    Container: {:x}", key).c_str());
+        if (value.size() == 0) {
+            continue;
+        }
+
+        bool found = false;
+
+        for (auto &item : value) {
+            for (auto variant : item.second) {
+                if (item.second.size() > 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                break;
+            }
+        }
+        if (!found) {
+            return;
+        }
+
+        if (auto form = RE::TESForm::LookupByID<RE::TESObjectREFR>(key)) {
+            if (auto base = form->GetBaseObject()) {
+                ImGui::Text(std::format("Container: {}", base->GetName()).c_str());
+            } else {
+                ImGui::Text(std::format("Container: {:x}", key).c_str());
+            }
+        } else {
+            ImGui::Text(std::format("Container: {:x}", key).c_str());
+        }
         for (auto [key2, value2] : value) {
-            ImGui::Text(std::format("        BaseForm: {:x}", key2).c_str());
+            if (auto form = RE::TESForm::LookupByID(key2)) {
+                ImGui::Text(std::format("    BaseForm: {}", form->GetName()).c_str());
+            } else {
+                ImGui::Text(std::format("    BaseForm: {:x}", key2).c_str());
+            }
             for (auto &item : value) {
                 for (auto variant : item.second) {
-                    if (variant) {
-                        ImGui::Text(std::format("            Model: {}", variant).c_str());
-                    }
+                    ImGui::Text(std::format("            Variant: {}", variant).c_str());
                 }
             }
 
@@ -38,6 +70,29 @@ void __stdcall UI::Queue::Render() {
         ImGui::Text(std::format("Form: {:x}", key).c_str());
         for (auto item : value) {
             ImGui::Text(std::format("    Form: {}", item).c_str());
+        }
+    }
+}
+
+
+void __stdcall UI::WorldStacks::Render() {
+    auto manager = Manager::GetSingleton();
+    for (auto [key, value] : manager->world_object_stacks) {
+        if (value.size() == 0) {
+            continue;
+        }
+        if (auto form = RE::TESForm::LookupByID<RE::TESObjectREFR>(key)) {
+            if (auto base = form->GetBaseObject()) {
+                ImGui::Text(std::format("Container: {}", base->GetName()).c_str());
+            } else {
+                ImGui::Text(std::format("Container: {:x}", key).c_str());
+            }
+        } else {
+            ImGui::Text(std::format("Container: {:x}", key).c_str());
+        }
+        for (auto item : value) {
+            ImGui::Text(std::format("    Variant: {}", item).c_str());
+        
         }
     }
 }

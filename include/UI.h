@@ -11,4 +11,7 @@ namespace UI {
         void __stdcall Render();
     }
 
+    namespace WorldStacks {
+        void __stdcall Render();
+    }
 };

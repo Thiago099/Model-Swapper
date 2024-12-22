@@ -29,14 +29,12 @@ namespace Serialization {
         void serialize(Archive & ar, const unsigned int version) {
             (void)version; // Silence unreferenced parameter warning
             ar & lookup;
-            ar & applied;
             ar & inventory;
 			ar& worldobject;
         }
 
 		Data() = default;
 		Data(
-            const std::map<RefID, int32_t>& applied_variants, 
             const std::map<RefID, inventory_stack>& inventory_variants,
 			const std::map<RefID, v_variant>& worldobject_stacks);
 
