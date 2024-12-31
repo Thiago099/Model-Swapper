@@ -3,6 +3,26 @@
 #include <ranges>
 #include "ModelSwapManager.h"
 
+void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
+    if (const auto base = a_entry->GetObject()) {
+        if (const auto variant = InventoryManager::GetSingleton()->GetInventoryModel(owner, base)) {
+            auto modelSwapManger = ModelSwapManager::GetSingleton();
+
+            modelSwapManger->Apply(base, variant);
+
+            // TODO: Populate for other types
+
+            if (const auto inv = RE::Inventory3DManager::GetSingleton()) {
+                if (!inv->GetRuntimeData().loadedModels.empty()) {
+                    inv->Clear3D();
+                    inv->GetRuntimeData().loadedModels.clear();
+                    inv->UpdateItem3D(a_entry);
+                }
+            }
+        }
+    }
+}
+
 void Manager::PreLoadGame(const std::string& filename) {
 	logger::info("PreLoadGame started. Filename: {}", filename.c_str());
 
@@ -29,14 +49,14 @@ void Manager::SaveGame(const char* save_name) {
 void Manager::ApplyInventoryModel(RE::InventoryEntryData* a1) {
     if (const auto ui = RE::UI::GetSingleton(); ui && a1) {
         if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
-            InventoryManager::GetSingleton()->SetInventoryBaseModel(RE::PlayerCharacter::GetSingleton(), a1);
+            SetInventoryBaseModel(RE::PlayerCharacter::GetSingleton(), a1);
         } else if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
             if (const auto cm = ui->GetMenu<RE::ContainerMenu>()) {
                 if (const auto items = cm->GetRuntimeData().itemList) {
                     if (const auto selected = items->GetSelectedItem()) {
                         const auto& data = selected->data;
                         if (const auto owner = RE::TESObjectREFR::LookupByHandle(data.owner).get()) {
-                            InventoryManager::GetSingleton()->SetInventoryBaseModel(owner, a1);
+                            SetInventoryBaseModel(owner, a1);
                         }
                     }
                 }

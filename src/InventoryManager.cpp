@@ -248,23 +248,21 @@ void InventoryManager::ProcessReference(RE::TESObjectREFR* a_ref) {
     }
 }
 
-void InventoryManager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
-    if (const auto base = a_entry->GetObject()) {
-        if (const auto variant = InventoryManager::GetSingleton()->GetInventoryModel(owner, base)) {
-            auto modelSwapManger = ModelSwapManager::GetSingleton();
 
-            modelSwapManger->Apply(base, variant);
 
-            // TODO: Populate for other types
+void InventoryManager::MoveItem(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,
+                                const int32_t a_count, RE::TESObjectREFR* a_other) {
+    auto inv_variants = GetInventoryModels(a_this, a_item, a_count);
+    UpdateStackOnRemove(a_this, a_item, a_count);
+    UpdateStackOnAdd(a_other, a_item, a_count, inv_variants);
+}
 
-            if (const auto inv = RE::Inventory3DManager::GetSingleton()) {
-                if (!inv->GetRuntimeData().loadedModels.empty()) {
-                    inv->Clear3D();
-                    inv->GetRuntimeData().loadedModels.clear();
-                    inv->UpdateItem3D(a_entry);
-                }
-            }
-        }
+void InventoryManager::DropItem(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this,
+                                const RE::TESBoundObject* a_item, const int32_t a_count) {
+    if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
+        OnItemDrop(a_this, a_item, a_count);
+    } else {
+        UpdateStackOnRemove(a_this, a_item, a_count);
     }
 }
 

@@ -27,8 +27,6 @@ bool Hooks::NpcSkinHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
 }
 
 
-
-
 RE::BSEventNotifyControl Hooks::SaveHook::ProcessEvent(RE::SaveLoadManager* a_this, const RE::BSSaveDataEvent* a_event, RE::BSTEventSource<RE::BSSaveDataEvent>* a_eventSource)
 {
 	if (listenSave.load()) {

@@ -105,18 +105,12 @@ RE::ObjectRefHandle* Hooks::MoveItemHooks<RefType>::RemoveItem(RefType* a_this, 
 	}
 
 	auto manager = InventoryManager::GetSingleton();
+
 	if (a_move_to_ref) {
-        auto inv_variants = manager->GetInventoryModels(a_this, a_item, a_count);
-        manager->UpdateStackOnRemove(a_this, a_item, a_count);
-        manager->UpdateStackOnAdd(a_move_to_ref, a_item, a_count, inv_variants);
+        manager->MoveItem(a_this, a_item, a_count, a_move_to_ref);
 	}
 	else {
-        if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
-            manager->OnItemDrop(a_this, a_item, a_count);
-        } else {
-            manager->UpdateStackOnRemove(a_this, a_item, a_count);
-        }
-
+        manager->DropItem(a_reason, a_this, a_item, a_count);
 	}
 
 	return remove_item_(a_this, a_hidden_return_argument, a_item, a_count, a_reason, a_extra_list, a_move_to_ref, a_drop_loc, a_rotate);

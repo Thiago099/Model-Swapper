@@ -3,6 +3,7 @@
 #include "Singleton.h"
 class Manager : public Singleton<Manager>{
     const char* lastSave = "NEW";
+    void SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry);
 
 public:
     void PreLoadGame(const std::string& filename);

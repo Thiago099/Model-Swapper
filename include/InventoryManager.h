@@ -13,10 +13,9 @@ class InventoryManager : public Singleton<InventoryManager> {
     std::map<RefID, inventory_stack> inventory_stacks;
     std::map<RefID, v_variant> world_object_stacks;
     std::vector<std::pair<FormID, v_variant>> variants_queue;
-public:
+
     void ClearData();
-    void LoadSerializedData(const char* filename);
-    void SerializeData(const char* filename);
+
     void SyncInventory(RE::TESObjectREFR* inventory_owner);
     void AddToStack(const RefID owner_id, const FormID item_id, variantId a_variant);
     void RemoveFromStack(const RefID owner_id, const FormID item_id);
@@ -26,19 +25,31 @@ public:
     void SetOWStack(RefID id, v_variant items);
 
 
-    std::map<RefID, inventory_stack> GetInventoryStacks();
-    std::map<RefID, v_variant> GetWorldObjectStacks();
-    std::vector<std::pair<FormID, v_variant>> GetVariantsQueue();
-    void OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count);
     void UpdateStackOnAdd(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count,
                           v_variant& add_vector);
     void UpdateStackOnRemove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count);
-    const int32_t GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
     std::vector<int32_t> GetInventoryModels(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item,
                                             const int32_t a_count);
     void AddToQueue(FormID formid, v_variant& variant_vector);
     v_variant FetchFromQueue(const FormID formId);
     void OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count);
+
+public:
+    void MoveItem(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item, const int32_t a_count,
+                  RE::TESObjectREFR* a_other);
+    void DropItem(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,
+                  const int32_t a_count);
     void ProcessReference(RE::TESObjectREFR* refr);
-    void SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry);
+    const int32_t GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
+    void OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count);
+
+    void LoadSerializedData(const char* filename);
+    void SerializeData(const char* filename);
+
+    //WARNING: The following methods are exposed to be used by MCP, and should not be used
+    //for anthing else
+    std::map<RefID, inventory_stack> GetInventoryStacks();
+    std::map<RefID, v_variant> GetWorldObjectStacks();
+    std::vector<std::pair<FormID, v_variant>> GetVariantsQueue();
+
 };
