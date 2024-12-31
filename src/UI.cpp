@@ -15,8 +15,8 @@ void UI::Install() {
 
 void __stdcall UI::InventoryStacks::Render() {
 
-    auto manager = Manager::GetSingleton();
-    for (auto &[key, value] : manager->inventory_stacks) {
+    auto manager = InventoryManager::GetSingleton();
+    for (auto &[key, value] : manager->GetInventoryStacks()) {
         if (value.size() == 0) {
             continue;
         }
@@ -60,8 +60,9 @@ void __stdcall UI::InventoryStacks::Render() {
 }
 
 void __stdcall UI::Queue::Render() {
-    auto manager = Manager::GetSingleton();
-    for (auto [key, value] : manager->variants_queue) {
+    auto manager = InventoryManager::GetSingleton();
+
+    for (auto [key, value] : manager->GetVariantsQueue()) {
         ImGui::Text(std::format("Form: {:x}", key).c_str());
         for (auto item : value) {
             ImGui::Text(std::format("    Form: {}", item).c_str());
@@ -71,8 +72,9 @@ void __stdcall UI::Queue::Render() {
 
 
 void __stdcall UI::WorldStacks::Render() {
-    auto manager = Manager::GetSingleton();
-    for (auto [key, value] : manager->world_object_stacks) {
+    auto manager = InventoryManager::GetSingleton();
+
+    for (auto [key, value] : manager->GetWorldObjectStacks()) {
         if (value.size() == 0) {
             continue;
         }

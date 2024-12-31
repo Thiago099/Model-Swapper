@@ -5,11 +5,13 @@ set(HEADER_FILES
 	include/Hooks.h
 	include/Manager.h
 	include/Str.h
-	include/Wrapper.h
+	include/AVObjects.h
 	include/TimeClass.h
 	include/SaveLoadManager.h
-	include/Serialization.h
+	include/InventoryManager.h
 	include/UI.h
 	include/SKSEMenuFramework.h
 	include/Model.h
+	include/ModelSwapManager.h
+	include/Singleton.h
 )

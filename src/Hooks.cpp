@@ -1,4 +1,5 @@
 #include "Hooks.h"
+#include "Manager.h"
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {
@@ -7,54 +8,21 @@ bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR
     return originalFunction(ref);
 }
 
+void Hooks::ReplaceTextureOnObjectsHook::Install() {
+    originalFunction =
+        REL::Relocation<std::uintptr_t>(RE::TESObjectREFR::VTABLE[0]).write_vfunc(0x6D, ShouldBackgroundClone);
+}
+
 int64_t Hooks::InventoryHoverHook::thunk(RE::InventoryEntryData* a1) {
     #undef GetObject
-    if (const auto ui = RE::UI::GetSingleton(); ui && a1) {
-        if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
-			Manager::GetSingleton()->SetInventoryBaseModel(RE::PlayerCharacter::GetSingleton() ,a1);
-        }
-        else if (ui->IsMenuOpen(RE::ContainerMenu::MENU_NAME)) {
-            if (const auto cm = ui->GetMenu<RE::ContainerMenu>()) {
-                if (const auto items= cm->GetRuntimeData().itemList) {
-                    if (const auto selected = items->GetSelectedItem()) {
-                        const auto & data = selected->data;
-                        if (const auto owner = RE::TESObjectREFR::LookupByHandle(data.owner).get()) {
-                            Manager::GetSingleton()->SetInventoryBaseModel(owner, a1);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    Manager::GetSingleton()->ApplyInventoryModel(a1);
     return originalFunction(a1);
 }
 
 bool Hooks::NpcSkinHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
 
-    if (ref) {
-        if (const auto obj = ref->GetBaseObject()) {
-            if (const auto npc = obj->As<RE::TESNPC>()) {
-                
-                if (const auto race = npc->race) {
-                    if (const auto raceSkin = race->skin) {
-                        for (const auto addon : raceSkin->armorAddons) {
-                            const auto manager = Manager::GetSingleton();
-                            auto id = manager->Process(addon, ref->GetFormID());
-                            manager->Apply(obj, id);
-                        }
-                    }
-                }
+    Manager::GetSingleton()->ApplyNpcSkin(ref);
 
-                if (const auto skin = npc->skin) {
-                    for (const auto addon : skin->armorAddons) {
-                        const auto manager = Manager::GetSingleton();
-                        auto id = manager->Process(addon, ref->GetFormID());
-                        manager->Apply(obj, id);
-                    }
-                }
-            }
-        }
-    }
     return originalFunction(ref);
 }
 

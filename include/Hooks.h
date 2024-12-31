@@ -1,17 +1,13 @@
 #pragma once
 #include "SaveLoadManager.h"
-#include "Manager.h"
-
+#include "InventoryManager.h"
 namespace Hooks {
 
     struct ReplaceTextureOnObjectsHook {
 
         static inline REL::Relocation<bool(RE::TESObjectREFR*)>originalFunction;
         static bool ShouldBackgroundClone(RE::TESObjectREFR* ref);
-
-        static void Install() {
-            originalFunction = REL::Relocation<std::uintptr_t>(RE::TESObjectREFR::VTABLE[0]).write_vfunc(0x6D, ShouldBackgroundClone);
-        }
+        static void Install();
     };
 
     struct InventoryHoverHook {
@@ -23,21 +19,15 @@ namespace Hooks {
 
      struct NpcSkinHook {
         static inline REL::Relocation<bool(RE::TESObjectREFR*)> originalFunction;
-
         static bool ShouldBackgroundClone(RE::TESObjectREFR* ref);
-
         static void Install();
     };
 
     struct SaveHook {
-
-
         static inline REL::Relocation<RE::BSEventNotifyControl(RE::SaveLoadManager*,const RE::BSSaveDataEvent*, RE::BSTEventSource<RE::BSSaveDataEvent>*)> originalFunction;
 		static inline REL::Relocation<errno_t(RE::BSWin32SaveDataSystemUtility*, const char*, char*, bool, bool)> originalFunction2;
-
 		static RE::BSEventNotifyControl ProcessEvent(RE::SaveLoadManager* a_this, const RE::BSSaveDataEvent* a_event, RE::BSTEventSource<RE::BSSaveDataEvent>* a_eventSource);
         static void PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_this,const char* a_fileName, char* a_dst, bool a_tmpSave, bool a_ignoreINI);
-
         static void Install();
     };
     inline std::atomic<bool> listenSave = false;
@@ -100,7 +90,7 @@ void Hooks::MoveItemHooks<RefType>::pickUpObject(RefType* a_this, RE::TESObjectR
     if (!a_this || !a_object || !a_object->GetBaseObject() || !a_object->GetBaseObject()->IsInventoryObject() || a_count <= 0) {
         return pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 	}
-    Manager::GetSingleton()->OnItemPickup(a_this,a_object,a_count);
+    InventoryManager::GetSingleton()->OnItemPickup(a_this,a_object,a_count);
     pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 }
 
@@ -114,7 +104,7 @@ RE::ObjectRefHandle* Hooks::MoveItemHooks<RefType>::RemoveItem(RefType* a_this, 
 		return remove_item_(a_this, a_hidden_return_argument, a_item, a_count, a_reason, a_extra_list, a_move_to_ref, a_drop_loc, a_rotate);
 	}
 
-	auto manager = Manager::GetSingleton();
+	auto manager = InventoryManager::GetSingleton();
 	if (a_move_to_ref) {
         auto inv_variants = manager->GetInventoryModels(a_this, a_item, a_count);
         manager->UpdateStackOnRemove(a_this, a_item, a_count);

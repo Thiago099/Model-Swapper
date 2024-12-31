@@ -1,4 +1,5 @@
 #include "Persistence.h"
+#include "ModelSwapManager.h"
 
 const std::string pattern = "_MS.json";
 const std::string directory = "Data/";
@@ -43,7 +44,7 @@ void Persistence::Install() {
     config->NowOverride.log("now override");
 
     EachConfigFile([](std::string filename, const json& data) {
-        auto manager = Manager::GetSingleton();
+        auto manager = ModelSwapManager::GetSingleton();
         if (data.is_array()) {
             auto i = 0;
             for (auto item : data) {

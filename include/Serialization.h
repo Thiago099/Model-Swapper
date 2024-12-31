@@ -4,7 +4,7 @@
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/version.hpp>
-#include "Wrapper.h"
+#include "AVObjects.h"
 
 namespace Serialization {
 
