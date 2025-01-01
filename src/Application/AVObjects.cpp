@@ -187,3 +187,16 @@ void AVObjectWEAP::Apply(const models& models, int32_t _variant) {
         base->SetModel(item->model);
     }
 }
+
+AVObject* AVObjectFactory::Create(RE::TESForm* form) {
+    if (auto obj = form->As<RE::TESObjectARMO>()) {
+        return new AVObjectARMO(obj);
+    } else if (auto obj = form->As<RE::TESObjectARMA>()) {
+        return new AVObjectARMA(obj);
+    } else if (auto obj = form->As<RE::TESObjectWEAP>()) {
+        return new AVObjectWEAP(obj);
+    } else if (auto obj = form->As<RE::TESModel>()) {
+        return new AVModel(form);
+    }
+    return nullptr;
+}
