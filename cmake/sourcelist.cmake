@@ -7,6 +7,7 @@ set(SOURCE_FILES
 	src/Application/ModelSwapManager.cpp
 	src/Application/Variants.cpp
 	src/Application/WorldStackManager.cpp
+	src/Application/ApplicationUtils.cpp
 	
 	src/Adaptors/Hooks.cpp
 	src/Adaptors/Persistence.cpp

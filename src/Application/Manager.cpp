@@ -1,4 +1,5 @@
 #include "Application/Manager.h"
+#include "Application/ApplicationUtils.h"
 #include "Application/ModelSwapManager.h"
 
 #include "Adaptors/Serialization.h"
@@ -58,10 +59,9 @@ void Manager::ApplyNewNonInventoryItem(RE::TESForm* base, RefID refid) {
 }
 
 void Manager::ApplyNewQueuedItem(RE::TESForm* base, RefID refid, v_variant variant_vector, int ref_count) {
-    auto invManager = InventoryManager::GetSingleton();
     auto worldStack = WorldStackManager::GetSingleton();
     auto modelSwap = ModelSwapManager::GetSingleton();
-    auto top_stack = invManager->GetTopOfStack(variant_vector, ref_count);
+    auto top_stack = ApplicationUtils::GetTopOfStack(variant_vector, ref_count);
     top_stack = top_stack.empty() ? std::vector<int32_t>(ref_count) : top_stack;
     if (top_stack.back() == -1) {
         auto id = modelSwap->Process(base, refid);

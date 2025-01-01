@@ -1,7 +1,7 @@
 #include "Application/InventoryManager.h"
 #include "Application/ModelSwapManager.h"
 #include "Application/WorldStackManager.h"
-
+#include "Application/ApplicationUtils.h"
 void InventoryManager::ClearData() {
     std::unique_lock lock_inv(inventory_stacks_mutex_);
     std::unique_lock lock_queue(queue_mutex_);
@@ -60,18 +60,7 @@ void InventoryManager::RemoveFromStack(const RefID owner_id, const FormID item_i
 
 
 
-v_variant InventoryManager::GetTopOfStack(v_variant& stack, const int32_t count) {
-    v_variant result;
-    if (static_cast<uint32_t>(stack.size()) >= count) {
-        // Copy the last a_count elements
-        result.insert(result.end(), stack.end() - count, stack.end());
-    } else {
-        // Add nullptrs to the beginning if count is larger than the stack size
-        result.insert(result.end(), count - stack.size(), -1);
-        result.insert(result.end(), stack.begin(), stack.end());
-    }
-    return result;
-}
+
 
 
 
@@ -141,7 +130,7 @@ std::vector<int32_t> InventoryManager::GetInventoryModels(const RE::TESObjectREF
         if (const auto it2 = it->second.find(a_item->GetFormID()); it2 != it->second.end()) {
             if (!it2->second.empty()) {
                 // need to collect from the back of the vector <-> top of the stack
-                return GetTopOfStack(it2->second, a_count);
+                return ApplicationUtils::GetTopOfStack(it2->second, a_count);
             }
         }
     }
@@ -178,20 +167,6 @@ void InventoryManager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBound
     }
     UpdateStackOnRemove(a_owner, a_obj, a_count);
 }
-
-bool InventoryManager::GetItemFromQueue(RE::TESObjectREFR* a_ref) {
-    //TODO: REFACTOR THIS
-    const auto refid = a_ref->GetFormID();
-    const auto base = a_ref->GetBaseObject();
-    auto ref_count = a_ref->extraList.GetCount();
-    ref_count = ref_count > 0 ? ref_count : 1;
-
-    auto modelSwap = ModelSwapManager::GetSingleton();
-
-
-   return false;
-}
-
 
 
 void InventoryManager::OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,

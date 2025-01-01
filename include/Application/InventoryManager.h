@@ -25,17 +25,13 @@ class InventoryManager : public Singleton<InventoryManager> {
 
 public:
     void ClearData();
-    v_variant GetTopOfStack(v_variant& stack, const int32_t count);
     v_variant FetchFromQueue(const FormID formId);
-    void Add(RefID owner, RefID item, int model);
 
     void OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item, const int32_t a_count,
                   RE::TESObjectREFR* a_other);
 
     void OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,
                   const int32_t a_count);
-
-    bool GetItemFromQueue(RE::TESObjectREFR* refr);
 
 
     void AddItemsToStack(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count,
@@ -46,7 +42,7 @@ public:
     const int32_t GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
 
     std::shared_mutex & GetMutex();
-
+    void Add(RefID owner, RefID item, int model);
     std::map<RefID, inventory_stack> GetAll();
     std::vector<std::pair<FormID, v_variant>> GetQueue();
 };
