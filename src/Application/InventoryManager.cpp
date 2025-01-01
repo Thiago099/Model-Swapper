@@ -2,12 +2,13 @@
 #include "Application/ModelSwapManager.h"
 #include "Application/WorldStackManager.h"
 #include "Application/ApplicationUtils.h"
+#include "Application/DropQueueManager.h"
+
 void InventoryManager::ClearData() {
     std::unique_lock lock_inv(inventory_stacks_mutex_);
-    std::unique_lock lock_queue(queue_mutex_);
 
     inventory_stacks.clear();
-    variants_queue.clear();
+
 }
 
 
@@ -66,8 +67,6 @@ void InventoryManager::RemoveFromStack(const RefID owner_id, const FormID item_i
 
 std::map<RefID, inventory_stack> InventoryManager::GetAll() { return inventory_stacks; }
 
-std::vector<std::pair<FormID, v_variant>> InventoryManager::GetQueue() {
-    return variants_queue; }
 
 
 std::shared_mutex& InventoryManager::GetMutex() {
@@ -138,32 +137,11 @@ std::vector<int32_t> InventoryManager::GetInventoryModels(const RE::TESObjectREF
 }
 
 
-void InventoryManager::AddToDropQueue(FormID formid, v_variant& variant_vector) {
-    std::unique_lock lock(queue_mutex_);
-    const auto pair = std::make_pair(formid, variant_vector);
-    variants_queue.push_back(pair);
-}
-
-v_variant InventoryManager::GetNextItemFromDropQueue(const FormID formId) {
-    std::unique_lock lock(queue_mutex_);
-
-    if (variants_queue.empty()) {
-        return {};
-    }
-    for (auto it = variants_queue.begin(); it != variants_queue.end(); ++it) {
-        if (it->first == formId) {
-            auto result = it->second;
-            variants_queue.erase(it);
-            return result;
-        }
-    }
-    return {};
-}
 
 
 void InventoryManager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
     if (auto variants = GetInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
-        AddToDropQueue(a_obj->GetFormID(), variants);
+        DropQueueManager::GetSingleton()->AddToDropQueue(a_obj->GetFormID(), variants);
     }
     UpdateStackOnRemove(a_owner, a_obj, a_count);
 }

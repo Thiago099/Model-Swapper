@@ -1,10 +1,11 @@
 #include "Application/Manager.h"
 #include "Application/ApplicationUtils.h"
 #include "Application/ModelSwapManager.h"
-
+#include "Application/DropQueueManager.h"
 #include "Adaptors/Serialization.h"
 #include "Application/WorldStackManager.h"
 #include <ranges>
+#include "Application/InventoryManager.h"
 
 void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
     if (const auto base = a_entry->GetObject()) {
@@ -136,7 +137,7 @@ void Manager::ApplyModelToReference(RE::TESObjectREFR* a_ref)
 
 	if (base->IsInventoryObject()) {
         logger::trace("inv object");
-        auto invManager = InventoryManager::GetSingleton();
+        auto dropQueueManager = DropQueueManager::GetSingleton();
         auto worldStack = WorldStackManager::GetSingleton();
         auto modelSwap = ModelSwapManager::GetSingleton();
 
@@ -144,7 +145,7 @@ void Manager::ApplyModelToReference(RE::TESObjectREFR* a_ref)
             logger::trace("Already applied");
             modelSwap->Apply(base, ref_variant.back());
         } 
-        if (auto variant_vector = invManager->GetNextItemFromDropQueue(base->GetFormID()); !variant_vector.empty()) {
+        if (auto variant_vector = dropQueueManager->GetNextItemFromDropQueue(base->GetFormID()); !variant_vector.empty()) {
             logger::trace("Queued");
             ApplyNewQueuedItem(base, refid, variant_vector, ref_count);
         }

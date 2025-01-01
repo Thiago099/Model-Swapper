@@ -7,10 +7,8 @@
 
 class InventoryManager : public Singleton<InventoryManager> {
 	std::shared_mutex inventory_stacks_mutex_;
-    std::shared_mutex queue_mutex_;
 
     std::map<RefID, inventory_stack> inventory_stacks;
-    std::vector<std::pair<FormID, v_variant>> variants_queue;
 
     void AddToStack(const RefID owner_id, const FormID item_id, variantId a_variant);
 
@@ -20,14 +18,12 @@ class InventoryManager : public Singleton<InventoryManager> {
 
     std::vector<int32_t> GetInventoryModels(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item,
                                             const int32_t a_count);
-    void AddToDropQueue(FormID formid, v_variant& variant_vector);
     void OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count);
     void SyncInventory(RE::TESObjectREFR* inventory_owner);
 
 public:
     void ClearData();
 
-    v_variant GetNextItemFromDropQueue(const FormID formId);
 
     void OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item, const int32_t a_count,
                   RE::TESObjectREFR* a_other);
@@ -48,5 +44,4 @@ public:
     void Add(RefID owner, RefID item, int model);
 
     std::map<RefID, inventory_stack> GetAll();
-    std::vector<std::pair<FormID, v_variant>> GetQueue();
 };

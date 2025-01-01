@@ -3,7 +3,7 @@
 #include "Application/Manager.h"
 #include "Application/InventoryManager.h"
 #include "Application/WorldStackManager.h"
-
+#include "Application/DropQueueManager.h"
 void UI::Install() {
 
     if (!SKSEMenuFramework::IsInstalled()) {
@@ -64,9 +64,9 @@ void __stdcall UI::InventoryStacks::Render() {
 }
 
 void __stdcall UI::Queue::Render() {
-    auto manager = InventoryManager::GetSingleton();
+    auto dropQueueManager = DropQueueManager::GetSingleton();
 
-    for (auto [key, value] : manager->GetQueue()) {
+    for (auto [key, value] : dropQueueManager->GetQueue()) {
         ImGui::Text(std::format("Form: {:x}", key).c_str());
         for (auto item : value) {
             ImGui::Text(std::format("    Form: {}", item).c_str());

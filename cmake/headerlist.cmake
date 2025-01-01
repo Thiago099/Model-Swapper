@@ -10,6 +10,7 @@ set(HEADER_FILES
 	include/Application/Variants.h
 	include/Application/WorldStackManager.h
 	include/Application/ApplicationUtils.h
+	include/Application/DropQueueManager.h
 
 	include/Adaptors/Hooks.h
 	include/Adaptors/UI.h
