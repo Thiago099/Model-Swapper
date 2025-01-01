@@ -45,7 +45,12 @@ void Hooks::SaveHook::PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_th
 		listenSave2.store(false);
 	    logger::trace("SaveHook::PrepareFileSavePath");
 	    logger::info("File name: {}", a_fileName);
-		Manager::GetSingleton()->SaveGame(a_fileName);
+
+        try {
+            InventoryManager::GetSingleton()->SerializeData(a_fileName);
+        } catch (const std::exception& e) {
+            logger::error("Failed to serialize data: {}", e.what());
+        }
 	}
 	originalFunction2(a_this, a_fileName, a_dst, a_tmpSave, a_ignoreINI);
 }

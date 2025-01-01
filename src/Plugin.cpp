@@ -21,7 +21,19 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
         Hooks::listenSave2.store(false);
 		Hooks::listenLoad.store(false);
 		const auto file2load = *Hooks::lastFile_ptr.load();
-		manager->PreLoadGame(file2load);
+
+
+        logger::info("PreLoadGame started. Filename: {}", file2load.c_str());
+
+        const auto file_path = Serialization::serialization_path + file2load;
+        try {
+            InventoryManager::GetSingleton()->LoadSerializedData(file_path.c_str());
+        } catch (const std::exception& e) {
+            logger::error("Failed to load data: {}", e.what());
+        }
+        logger::info("PreLoadGame completed");
+
+
         Hooks::listenLoad.store(true);
     }
     if (message->type == SKSE::MessagingInterface::kPostLoadGame) {

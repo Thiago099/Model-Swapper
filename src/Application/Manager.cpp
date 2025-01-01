@@ -25,29 +25,6 @@ void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntry
     }
 }
 
-void Manager::PreLoadGame(const std::string& filename) {
-	logger::info("PreLoadGame started. Filename: {}", filename.c_str());
-
-	const auto file_path = Serialization::serialization_path + filename;
-	try {
-	    InventoryManager::GetSingleton()->LoadSerializedData(file_path.c_str());
-	}
-	catch (const std::exception& e) {
-		logger::error("Failed to load data: {}", e.what());
-	}
-	logger::info("PreLoadGame completed");
-}
-
-void Manager::SaveGame(const char* save_name) {
-
-	try {
-        InventoryManager::GetSingleton()->SerializeData(save_name);
-	}
-	catch (const std::exception& e) {
-		logger::error("Failed to serialize data: {}", e.what());
-	}
-}
-
 void Manager::ApplyInventoryModel(RE::InventoryEntryData* a1) {
     if (const auto ui = RE::UI::GetSingleton(); ui && a1) {
         if (ui->IsMenuOpen(RE::InventoryMenu::MENU_NAME)) {
@@ -66,6 +43,7 @@ void Manager::ApplyInventoryModel(RE::InventoryEntryData* a1) {
         }
     }
 }
+
 void Manager::ApplyNpcSkin(RE::TESObjectREFR* ref) {
     if (ref) {
         if (const auto obj = ref->GetBaseObject()) {
@@ -91,6 +69,7 @@ void Manager::ApplyNpcSkin(RE::TESObjectREFR* ref) {
         }
     }
 }
+
 void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
 {
     const auto refid = a_ref->GetFormID();
@@ -113,5 +92,4 @@ void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
             modelSwapManger->Apply(base, id);
 		}
 	}
-
 }
