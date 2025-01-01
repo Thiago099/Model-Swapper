@@ -138,13 +138,13 @@ std::vector<int32_t> InventoryManager::GetInventoryModels(const RE::TESObjectREF
 }
 
 
-void InventoryManager::AddToQueue(FormID formid, v_variant& variant_vector) {
+void InventoryManager::AddToDropQueue(FormID formid, v_variant& variant_vector) {
     std::unique_lock lock(queue_mutex_);
     const auto pair = std::make_pair(formid, variant_vector);
     variants_queue.push_back(pair);
 }
 
-v_variant InventoryManager::FetchFromQueue(const FormID formId) {
+v_variant InventoryManager::GetNextItemFromDropQueue(const FormID formId) {
     std::unique_lock lock(queue_mutex_);
 
     if (variants_queue.empty()) {
@@ -163,7 +163,7 @@ v_variant InventoryManager::FetchFromQueue(const FormID formId) {
 
 void InventoryManager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
     if (auto variants = GetInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
-        AddToQueue(a_obj->GetFormID(), variants);
+        AddToDropQueue(a_obj->GetFormID(), variants);
     }
     UpdateStackOnRemove(a_owner, a_obj, a_count);
 }

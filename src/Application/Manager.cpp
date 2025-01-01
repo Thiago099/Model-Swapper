@@ -144,7 +144,7 @@ void Manager::ApplyModelToReference(RE::TESObjectREFR* a_ref)
             logger::trace("Already applied");
             modelSwap->Apply(base, ref_variant.back());
         } 
-        if (auto variant_vector = invManager->FetchFromQueue(base->GetFormID()); !variant_vector.empty()) {
+        if (auto variant_vector = invManager->GetNextItemFromDropQueue(base->GetFormID()); !variant_vector.empty()) {
             logger::trace("Queued");
             ApplyNewQueuedItem(base, refid, variant_vector, ref_count);
         }

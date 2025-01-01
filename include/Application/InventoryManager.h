@@ -13,19 +13,21 @@ class InventoryManager : public Singleton<InventoryManager> {
     std::vector<std::pair<FormID, v_variant>> variants_queue;
 
     void AddToStack(const RefID owner_id, const FormID item_id, variantId a_variant);
+
     void RemoveFromStack(const RefID owner_id, const FormID item_id);
 
-
     void UpdateStackOnRemove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count);
+
     std::vector<int32_t> GetInventoryModels(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item,
                                             const int32_t a_count);
-    void AddToQueue(FormID formid, v_variant& variant_vector);
+    void AddToDropQueue(FormID formid, v_variant& variant_vector);
     void OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count);
     void SyncInventory(RE::TESObjectREFR* inventory_owner);
 
 public:
     void ClearData();
-    v_variant FetchFromQueue(const FormID formId);
+
+    v_variant GetNextItemFromDropQueue(const FormID formId);
 
     void OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item, const int32_t a_count,
                   RE::TESObjectREFR* a_other);
@@ -42,7 +44,9 @@ public:
     const int32_t GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
 
     std::shared_mutex & GetMutex();
+
     void Add(RefID owner, RefID item, int model);
+
     std::map<RefID, inventory_stack> GetAll();
     std::vector<std::pair<FormID, v_variant>> GetQueue();
 };
