@@ -3,7 +3,7 @@ set(SOURCE_FILES
 
 	src/Application/Manager.cpp
 	src/Application/AVObjects.cpp
-	src/Application/InventoryManager.cpp
+	src/Application/InventoyStackManager.cpp
 	src/Application/ModelSwapManager.cpp
 	src/Application/Variants.cpp
 	src/Application/WorldStackManager.cpp

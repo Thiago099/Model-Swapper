@@ -9,7 +9,7 @@
 
 void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
     if (const auto base = a_entry->GetObject()) {
-        if (const auto variant = InventoryManager::GetSingleton()->GetInventoryModel(owner, base)) {
+        if (const auto variant = InventoyStackManager::GetSingleton()->GetInventoryModel(owner, base)) {
             auto modelSwapManger = ModelSwapManager::GetSingleton();
 
             modelSwapManger->Apply(base, variant);

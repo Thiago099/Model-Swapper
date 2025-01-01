@@ -4,7 +4,7 @@ set(HEADER_FILES
 	
 	include/Application/Manager.h
 	include/Application/AVObjects.h
-	include/Application/InventoryManager.h
+	include/Application/InventoyStackManager.h
 	include/Application/Model.h
 	include/Application/ModelSwapManager.h
 	include/Application/Variants.h

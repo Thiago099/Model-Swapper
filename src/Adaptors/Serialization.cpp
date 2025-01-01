@@ -34,7 +34,7 @@ void Serialization::LoadSerializedData(const char* filename) {
     Serialization::loadDataBinary(saved_data, filename);
 
     {
-        auto inventory = InventoryManager::GetSingleton();
+        auto inventory = InventoyStackManager::GetSingleton();
         inventory->ClearData();
         std::unique_lock lock_var(inventory->GetMutex());
 
@@ -64,7 +64,7 @@ void Serialization::SerializeData(const char* filename) {
     const auto file_path = Serialization::serialization_path + filename;
 
     auto worldStack = WorldStackManager::GetSingleton();
-    auto inventory = InventoryManager::GetSingleton();
+    auto inventory = InventoyStackManager::GetSingleton();
 
     std::shared_lock lock_inv(inventory->GetMutex());
     std::shared_lock lock_var(worldStack->GetMutex());

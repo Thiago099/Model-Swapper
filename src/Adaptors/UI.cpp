@@ -19,7 +19,7 @@ void UI::Install() {
 
 void __stdcall UI::InventoryStacks::Render() {
 
-    auto manager = InventoryManager::GetSingleton();
+    auto manager = InventoyStackManager::GetSingleton();
     for (auto &[key, value] : manager->GetAll()) {
         if (value.size() == 0) {
             continue;

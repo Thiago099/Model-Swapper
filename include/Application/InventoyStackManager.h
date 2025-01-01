@@ -5,14 +5,14 @@
 #include "Lib/Singleton.h"
 #include "Application/Model.h"
 
-class InventoryManager : public Singleton<InventoryManager> {
+class InventoyStackManager : public Singleton<InventoyStackManager> {
 	std::shared_mutex inventory_stacks_mutex_;
 
     std::map<RefID, inventory_stack> inventory_stacks;
 
-    void AddToStack(const RefID owner_id, const FormID item_id, variantId a_variant);
+    void AddItemToStack(const RefID owner_id, const FormID item_id, variantId a_variant);
 
-    void RemoveFromStack(const RefID owner_id, const FormID item_id);
+    void RemoveItemFromStack(const RefID owner_id, const FormID item_id);
 
     void UpdateStackOnRemove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count);
 
@@ -20,6 +20,9 @@ class InventoryManager : public Singleton<InventoryManager> {
                                             const int32_t a_count);
     void OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count);
     void SyncInventory(RE::TESObjectREFR* inventory_owner);
+
+    void AddItemsToStack(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count,
+                         v_variant& add_vector);
 
 public:
     void ClearData();
@@ -32,8 +35,6 @@ public:
                   const int32_t a_count);
 
 
-    void AddItemsToStack(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count,
-                        v_variant& add_vector);
 
     void OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count);
 

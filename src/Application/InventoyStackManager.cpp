@@ -4,7 +4,7 @@
 #include "Application/ApplicationUtils.h"
 #include "Application/DropQueueManager.h"
 
-void InventoryManager::ClearData() {
+void InventoyStackManager::ClearData() {
     std::unique_lock lock_inv(inventory_stacks_mutex_);
 
     inventory_stacks.clear();
@@ -14,7 +14,7 @@ void InventoryManager::ClearData() {
 
 
 
-void InventoryManager::SyncInventory(RE::TESObjectREFR* inventory_owner) {
+void InventoyStackManager::SyncInventory(RE::TESObjectREFR* inventory_owner) {
     std::map<FormID, int32_t> actual_inventory;
     const auto inv = inventory_owner->GetInventory();
     for (const auto& [bound, entry] : inv) {
@@ -32,13 +32,13 @@ void InventoryManager::SyncInventory(RE::TESObjectREFR* inventory_owner) {
         if (actual_count > stack_count) {
             auto diff = actual_count - stack_count;
             while (diff > 0) {
-                AddToStack(inventory_owner->GetFormID(), item, -1);
+                AddItemToStack(inventory_owner->GetFormID(), item, -1);
                 --diff;
             }
         } else if (actual_count < stack_count) {
             auto diff = stack_count - actual_count;
             while (diff > 0) {
-                RemoveFromStack(inventory_owner->GetFormID(), item);
+                RemoveItemFromStack(inventory_owner->GetFormID(), item);
                 --diff;
             }
         }
@@ -46,13 +46,13 @@ void InventoryManager::SyncInventory(RE::TESObjectREFR* inventory_owner) {
 }
 
 
-void InventoryManager::AddToStack(const RefID owner_id, const FormID item_id, variantId a_variant) {
+void InventoyStackManager::AddItemToStack(const RefID owner_id, const FormID item_id, variantId a_variant) {
     if (a_variant != -1) {
         inventory_stacks[owner_id][item_id].push_back(a_variant);
     }
 }
 
-void InventoryManager::RemoveFromStack(const RefID owner_id, const FormID item_id) {
+void InventoyStackManager::RemoveItemFromStack(const RefID owner_id, const FormID item_id) {
     if (!inventory_stacks[owner_id][item_id].empty()) {
         inventory_stacks[owner_id][item_id].pop_back();
     }
@@ -65,28 +65,28 @@ void InventoryManager::RemoveFromStack(const RefID owner_id, const FormID item_i
 
 
 
-std::map<RefID, inventory_stack> InventoryManager::GetAll() { return inventory_stacks; }
+std::map<RefID, inventory_stack> InventoyStackManager::GetAll() { return inventory_stacks; }
 
 
 
-std::shared_mutex& InventoryManager::GetMutex() {
+std::shared_mutex& InventoyStackManager::GetMutex() {
     return inventory_stacks_mutex_; }
-void InventoryManager::Add(RefID owner, RefID item, int model) {
+void InventoyStackManager::Add(RefID owner, RefID item, int model) {
     inventory_stacks[owner][item].push_back(model);
 }
-void InventoryManager::AddItemsToStack(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj,
+void InventoyStackManager::AddItemsToStack(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj,
                                         const int32_t a_count,
                                v_variant& add_vector) {
     std::unique_lock lock(inventory_stacks_mutex_);
     for (int i = 0; i < add_vector.size(); ++i) {
         logger::trace("Add I: {}", add_vector[i]);
-        AddToStack(a_owner->GetFormID(), a_obj->GetFormID(), add_vector[i]);
+        AddItemToStack(a_owner->GetFormID(), a_obj->GetFormID(), add_vector[i]);
     }
 }
 
-void InventoryManager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
+void InventoyStackManager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
     auto worldStack = WorldStackManager::GetSingleton();
-    auto inventoryManager = InventoryManager::GetSingleton();
+    auto inventoryManager = InventoyStackManager::GetSingleton();
 
     inventoryManager->SyncInventory(a_owner);
 
@@ -100,16 +100,16 @@ void InventoryManager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREF
     WorldStackManager::GetSingleton()->Remove(base->GetFormID(), obj_refid);
 }
 
-void InventoryManager::UpdateStackOnRemove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj,
+void InventoyStackManager::UpdateStackOnRemove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj,
                                            const int32_t a_count) {
     SyncInventory(a_owner);
     std::unique_lock lock(inventory_stacks_mutex_);
     for (int i = 0; i < a_count; ++i) {
-        RemoveFromStack(a_owner->GetFormID(), a_obj->GetFormID());
+        RemoveItemFromStack(a_owner->GetFormID(), a_obj->GetFormID());
     }
 }
 
-const int32_t InventoryManager::GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item) {
+const int32_t InventoyStackManager::GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item) {
     std::shared_lock lock(inventory_stacks_mutex_);
     if (const auto it = inventory_stacks.find(a_owner->GetFormID()); it != inventory_stacks.end()) {
         if (const auto it2 = it->second.find(a_item->GetFormID()); it2 != it->second.end()) {
@@ -121,7 +121,7 @@ const int32_t InventoryManager::GetInventoryModel(const RE::TESObjectREFR* a_own
     return -1;
 }
 
-std::vector<int32_t> InventoryManager::GetInventoryModels(const RE::TESObjectREFR* a_owner,
+std::vector<int32_t> InventoyStackManager::GetInventoryModels(const RE::TESObjectREFR* a_owner,
                                                           const RE::TESBoundObject* a_item,
                                                  const int32_t a_count) {
     std::shared_lock lock(inventory_stacks_mutex_);
@@ -139,7 +139,7 @@ std::vector<int32_t> InventoryManager::GetInventoryModels(const RE::TESObjectREF
 
 
 
-void InventoryManager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
+void InventoyStackManager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
     if (auto variants = GetInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
         DropQueueManager::GetSingleton()->AddToDropQueue(a_obj->GetFormID(), variants);
     }
@@ -147,14 +147,14 @@ void InventoryManager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBound
 }
 
 
-void InventoryManager::OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,
+void InventoyStackManager::OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,
                                 const int32_t a_count, RE::TESObjectREFR* a_other) {
     auto inv_variants = GetInventoryModels(a_this, a_item, a_count);
     UpdateStackOnRemove(a_this, a_item, a_count);
     AddItemsToStack(a_other, a_item, a_count, inv_variants);
 }
 
-void InventoryManager::OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this,
+void InventoyStackManager::OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this,
                                 const RE::TESBoundObject* a_item, const int32_t a_count) {
     if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
         OnItemDrop(a_this, a_item, a_count);
