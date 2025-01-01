@@ -243,9 +243,15 @@ void InventoryManager::ProcessReference(RE::TESObjectREFR* a_ref) {
         logger::trace("None");
         auto id = modelSwap->Process(base, refid);
         if (id != -1) {
+            logger::trace("Found variant");
             modelSwap->Apply(base, id);
             AddToOWStack(refid, id);
         }
+        #ifndef NDEBUG
+		else {
+			logger::warn("No variant found for refid: {:x}", refid);
+		}
+        #endif
     }
 }
 

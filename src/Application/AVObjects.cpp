@@ -4,6 +4,8 @@
 #include "Application/Config.h"
 #include "Application/Variants.h"
 
+#define RETURN_IF_NOT_NEGATIVE(x) if (x != -1) return x;
+
 AVObjectARMA::AVObjectARMA(RE::TESObjectARMA* base) : base(base) {
     if (!base) {
         return;
@@ -23,23 +25,30 @@ int32_t AVObjectARMA::GetVariant(const models& models, int seed) {
         return -1;
     }
 
+    int32_t result = -1;
+
     if (base->bipedModels) {
-        if (const auto item = Variants::pickVariant(models, initialMaleThirdPersonModle, seed); item != -1) {
-            return item;
-        }
-        if (const auto item = Variants::pickVariant(models, initialFemaleThirdPersonModle, seed); item != -1) {
-            return item;
-        }
+
+        result = Variants::pickVariant(models, initialMaleThirdPersonModle, seed);
+
+        RETURN_IF_NOT_NEGATIVE(result);
+
+        result = Variants::pickVariant(models, initialFemaleThirdPersonModle, seed);
+
+        RETURN_IF_NOT_NEGATIVE(result);
+
     }
     if (base->bipedModel1stPersons) {
-        if (const auto item = Variants::pickVariant(models, initialMaleFirstPersonModle, seed); item != -1) {
-            return item;
-        }
-        if (const auto item = Variants::pickVariant(models, initialFemaleFirstPersonModel, seed); item != -1) {
-            return item;
-        }
+
+        result = Variants::pickVariant(models, initialMaleFirstPersonModle, seed);
+
+        RETURN_IF_NOT_NEGATIVE(result);
+
+        result = Variants::pickVariant(models, initialFemaleFirstPersonModel, seed);
+
+        RETURN_IF_NOT_NEGATIVE(result);
     }
-    return -1;
+    return result;
 }
 
 void AVObjectARMA::Apply(const models& models, int32_t _variant)  {
@@ -78,13 +87,15 @@ int32_t AVModel::GetVariant(const models& models, int seed) {
     if (!base) {
         return -1;
     }
-
+    int32_t result = -1;
     if (const auto bm = base->As<RE::TESModel>()) {
-        if (const auto item = Variants::pickVariant(models, model, seed)) {
-            return item;
-        }
+
+        result = Variants::pickVariant(models, model, seed);
+
+        RETURN_IF_NOT_NEGATIVE(result);
     }
-    return -1;
+
+    return result;
 }
 
 void AVModel::Apply(const models& models, int32_t _variant) {
@@ -112,13 +123,15 @@ int32_t AVObjectARMO::GetVariant(const models& models, int seed) {
     if (!base) {
         return -1;
     }
+    int32_t result = -1;
 
-    if (auto item = Variants::pickVariant(models, male, seed)) {
-        return item;
-    }
-    if (auto item = Variants::pickVariant(models, female, seed)) {
-        return item;
-    }
+    result = Variants::pickVariant(models, male, seed);
+
+    RETURN_IF_NOT_NEGATIVE(result);
+
+    result = Variants::pickVariant(models, female, seed);
+
+    RETURN_IF_NOT_NEGATIVE(result);
 
     return -1;
 }
@@ -149,15 +162,17 @@ int32_t AVObjectWEAP::GetVariant(const models& models, int seed) {
     if (!base) {
         return -1;
     }
+    int32_t result = -1;
 
-    if (auto item = Variants::pickVariant(models, firstPersonModel, seed)) {
-        return item;
-    }
-    if (auto item = Variants::pickVariant(models, model, seed)) {
-        return item;
-    }
+    result = Variants::pickVariant(models, firstPersonModel, seed);
 
-    return -1;
+    RETURN_IF_NOT_NEGATIVE(result);
+
+    result = Variants::pickVariant(models, model, seed);
+
+    RETURN_IF_NOT_NEGATIVE(result);
+
+    return result;
 }
 
 void AVObjectWEAP::Apply(const models& models, int32_t _variant) {

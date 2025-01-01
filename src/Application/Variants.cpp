@@ -15,26 +15,24 @@ int32_t Variants::pickVariant(const models& models, const char* str, const uint3
 
             auto now = config->NowOverride.exists ? config->NowOverride : Time::now();
 
-#ifndef NDEBUG
+            #ifndef NDEBUG
 
             now.log("now");
             result->startDate.log("start");
             result->endDate.log("end");
 
-#endif  // !NDEBUG
+            #endif
 
             if (!result->startDate.exists || !now.exists || !result->endDate.exists) {
-                logger::trace("date is fault, fallback yes");
+                logger::trace("date is fault, fallback yes {}", random_number);
                 return random_number;
             }
             if (now.isBetweenMD(result->startDate, result->endDate)) {
-                logger::trace("is in between replacing");
+                logger::trace("is in between replacing {}", random_number);
                 return random_number;
             }
 
-            logger::trace("not in between doing nothing");
-
-            return random_number;
+            logger::trace("not in between doing nothing would be {}", random_number);
         }
     }
     return -1;

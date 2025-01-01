@@ -3,6 +3,11 @@
 #include "Application/AVObjects.h"
 
 void ModelSwapManager::Apply(RE::TESForm* base, variantId variant) {
+
+    if (variant == -1) {
+		return;
+	}
+
     if (auto obj = base->As<RE::TESObjectARMO>()) {
         ApplyImpl(obj, variant);
     } else if (auto obj = base->As<RE::TESObjectARMA>()) {

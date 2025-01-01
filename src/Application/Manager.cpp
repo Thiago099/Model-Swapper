@@ -81,13 +81,25 @@ void Manager::ApplyModelToReference(RE::TESObjectREFR* a_ref)
 	}
 
 	if (base->IsInventoryObject()) {
+        logger::trace("inv object");
         auto invManager = InventoryManager::GetSingleton();
         invManager->ProcessReference(a_ref);
     } else {
+        logger::trace("other stuff");
         auto modelSwapManger = ModelSwapManager::GetSingleton();
         auto id = modelSwapManger->Process(base, refid);
+        modelSwapManger->Apply(base, id);
+
+        #ifndef NDEBUG
+            
         if (id != -1) {
-            modelSwapManger->Apply(base, id);
-		}
+            logger::trace("Model applied to refid: {:x}", refid);
+        } 
+        else {
+            logger::trace("Model applied");
+        }
+
+        #endif
+      
 	}
 }
