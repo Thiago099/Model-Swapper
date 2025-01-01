@@ -23,4 +23,4 @@ void WorldStackManager::Clean() {
 
 std::shared_mutex& WorldStackManager::GetMutex() { return applied_variants_mutex_; }
 
-std::map<RefID, v_variant> WorldStackManager::GetWorldObjectStacks() { return world_object_stacks; }
+std::map<RefID, v_variant> WorldStackManager::GetAll() { return world_object_stacks; }

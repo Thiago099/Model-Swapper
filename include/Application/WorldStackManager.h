@@ -14,6 +14,7 @@ public:
     void Add(RefID id, int32_t item);
     void Set(RefID id, v_variant items);
     void Clean();
+
     std::shared_mutex& GetMutex();
-    std::map<RefID, v_variant> GetWorldObjectStacks();
+    std::map<RefID, v_variant> GetAll();
 };

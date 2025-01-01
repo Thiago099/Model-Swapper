@@ -74,13 +74,13 @@ v_variant InventoryManager::GetTopOfStack(v_variant& stack, const int32_t count)
 
 
 
-std::map<RefID, inventory_stack> InventoryManager::GetInventoryStacks() { return inventory_stacks; }
+std::map<RefID, inventory_stack> InventoryManager::GetAll() { return inventory_stacks; }
 
-std::vector<std::pair<FormID, v_variant>> InventoryManager::GetVariantsQueue() {
+std::vector<std::pair<FormID, v_variant>> InventoryManager::GetQueue() {
     return variants_queue; }
 
 
-std::shared_mutex& InventoryManager::GetInventoryMutex() {
+std::shared_mutex& InventoryManager::GetMutex() {
     return inventory_stacks_mutex_; }
 void InventoryManager::Add(RefID owner, RefID item, int model) {
     inventory_stacks[owner][item].push_back(model);

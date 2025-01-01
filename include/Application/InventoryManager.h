@@ -44,9 +44,9 @@ public:
     const int32_t GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
 
 
-    std::shared_mutex & GetInventoryMutex();
+    std::shared_mutex & GetMutex();
 
 
-    std::map<RefID, inventory_stack> GetInventoryStacks();
-    std::vector<std::pair<FormID, v_variant>> GetVariantsQueue();
+    std::map<RefID, inventory_stack> GetAll();
+    std::vector<std::pair<FormID, v_variant>> GetQueue();
 };
