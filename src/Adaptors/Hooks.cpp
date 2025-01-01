@@ -3,7 +3,7 @@
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {
-        Manager::GetSingleton()->ProcessReference(ref);
+        Manager::GetSingleton()->ApplyModelToReference(ref);
     }
     return originalFunction(ref);
 }

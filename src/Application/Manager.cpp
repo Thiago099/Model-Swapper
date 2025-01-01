@@ -12,8 +12,6 @@ void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntry
 
             modelSwapManger->Apply(base, variant);
 
-            // TODO: Populate for other types
-
             if (const auto inv = RE::Inventory3DManager::GetSingleton()) {
                 if (!inv->GetRuntimeData().loadedModels.empty()) {
                     inv->Clear3D();
@@ -70,7 +68,7 @@ void Manager::ApplyNpcSkin(RE::TESObjectREFR* ref) {
     }
 }
 
-void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
+void Manager::ApplyModelToReference(RE::TESObjectREFR* a_ref)
 {
     const auto refid = a_ref->GetFormID();
 	const auto base = a_ref->GetBaseObject();

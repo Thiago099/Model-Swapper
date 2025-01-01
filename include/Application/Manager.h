@@ -8,5 +8,5 @@ class Manager : public Singleton<Manager>{
 public:
     void ApplyInventoryModel(RE::InventoryEntryData* a1);
     void ApplyNpcSkin(RE::TESObjectREFR* ref);
-	void ProcessReference(RE::TESObjectREFR* a_ref);
+	void ApplyModelToReference(RE::TESObjectREFR* a_ref);
 };
