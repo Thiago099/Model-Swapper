@@ -73,3 +73,26 @@ public:
         int32_t GetVariant(const models& models, int seed) override;
     virtual void Apply(const models& models, int32_t _variant) override;
 };
+
+class AVObjectFactory
+{
+    static AVObject* CreateImpl(RE::TESObjectARMA* obj) { return new AVObjectARMA(obj); }
+    static AVObject* CreateImpl(RE::TESForm* obj) { return new AVModel(obj); }
+    static AVObject* CreateImpl(RE::TESObjectARMO* obj) { return new AVObjectARMO(obj); }
+    static AVObject* CreateImpl(RE::TESObjectWEAP* obj) { return new AVObjectWEAP(obj); }
+
+    public:
+
+    static AVObject* Create(RE::TESForm* form) {
+        if (auto obj = form->As<RE::TESObjectARMO>()) {
+            return CreateImpl(obj);
+        } else if (auto obj = form->As<RE::TESObjectARMA>()) {
+            return CreateImpl(obj);
+        } else if (auto obj = form->As<RE::TESObjectWEAP>()) {
+            return CreateImpl(obj);
+        } else if (auto obj = form->As<RE::TESModel>()) {
+            return CreateImpl(form);
+        }
+        return nullptr;
+    }
+};
