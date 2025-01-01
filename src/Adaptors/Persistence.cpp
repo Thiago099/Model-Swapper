@@ -1,7 +1,6 @@
 #include "Adaptors/Persistence.h"
 #include "Application/ModelSwapManager.h"
 
-#include "Application/Manager.h"
 #include "Application/Config.h"
 #include "Lib/Ini.h"
 

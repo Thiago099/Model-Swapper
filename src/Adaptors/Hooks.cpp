@@ -1,10 +1,10 @@
 #include "Adaptors/Hooks.h"
-#include "Application/Manager.h"
+#include "Application/EventHandler.h"
 #include "Adaptors/Serialization.h"
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {
-        Manager::GetSingleton()->ApplyModelToReference(ref);
+        EventHandler::GetSingleton()->OnGenericLoadEvent(ref);
     }
     return originalFunction(ref);
 }
@@ -16,13 +16,13 @@ void Hooks::ReplaceTextureOnObjectsHook::Install() {
 
 int64_t Hooks::InventoryHoverHook::thunk(RE::InventoryEntryData* a1) {
     #undef GetObject
-    Manager::GetSingleton()->ApplyInventoryModel(a1);
+    EventHandler::GetSingleton()->OnInventoryHover(a1);
     return originalFunction(a1);
 }
 
 bool Hooks::NpcSkinHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
 
-    Manager::GetSingleton()->ApplyNpcSkin(ref);
+    EventHandler::GetSingleton()->OnNpcLoad(ref);
 
     return originalFunction(ref);
 }

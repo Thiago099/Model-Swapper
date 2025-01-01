@@ -4,13 +4,11 @@
 #include "Adaptors/Persistence.h"
 #include "Lib/TimeClass.h"
 #include "Adaptors/UI.h"
-#include "Application/Manager.h"
 #include "Adaptors/Serialization.h"
 void OnMessage(SKSE::MessagingInterface::Message* message) {
     if (message->type == SKSE::MessagingInterface::kDataLoaded) {
     }
 
-    auto manager = Manager::GetSingleton();
     if (message->type == SKSE::MessagingInterface::kSaveGame) {
         Hooks::listenSave2.store(false);
         Hooks::listenSave.store(true);

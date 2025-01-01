@@ -1,7 +1,7 @@
 set(SOURCE_FILES
 	src/Plugin.cpp
 
-	src/Application/Manager.cpp
+	src/Application/EventHandler.cpp
 	src/Application/AVObjects.cpp
 	src/Application/InventoyStackManager.cpp
 	src/Application/ModelSwapManager.cpp

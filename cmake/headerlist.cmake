@@ -2,7 +2,7 @@ set(HEADER_FILES
 	include/PCH.h
 	include/Plugin.h
 	
-	include/Application/Manager.h
+	include/Application/EventHandler.h
 	include/Application/AVObjects.h
 	include/Application/InventoyStackManager.h
 	include/Application/Model.h
