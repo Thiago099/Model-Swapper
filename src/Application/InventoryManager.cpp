@@ -1,5 +1,6 @@
 #include "Application/InventoryManager.h"
 #include "Application/ModelSwapManager.h"
+#include "Application/WorldStackManager.h"
 
 void InventoryManager::ClearData() {
     std::unique_lock lock_inv(inventory_stacks_mutex_);
@@ -85,7 +86,7 @@ std::shared_mutex& InventoryManager::GetMutex() {
 void InventoryManager::Add(RefID owner, RefID item, int model) {
     inventory_stacks[owner][item].push_back(model);
 }
-void InventoryManager::UpdateStackOnAdd(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj,
+void InventoryManager::AddItemsToStack(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj,
                                         const int32_t a_count,
                                v_variant& add_vector) {
     std::unique_lock lock(inventory_stacks_mutex_);
@@ -93,6 +94,22 @@ void InventoryManager::UpdateStackOnAdd(RE::TESObjectREFR* a_owner, const RE::TE
         logger::trace("Add I: {}", add_vector[i]);
         AddToStack(a_owner->GetFormID(), a_obj->GetFormID(), add_vector[i]);
     }
+}
+
+void InventoryManager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
+    auto worldStack = WorldStackManager::GetSingleton();
+    auto inventoryManager = InventoryManager::GetSingleton();
+
+    inventoryManager->SyncInventory(a_owner);
+
+    const auto base = a_obj->GetBaseObject();
+    const auto obj_refid = a_obj->GetFormID();
+
+    auto& wo_stack = worldStack->GetByReference(obj_refid);
+
+    inventoryManager->AddItemsToStack(a_owner, base, a_count, wo_stack);
+
+    WorldStackManager::GetSingleton()->Remove(base->GetFormID(), obj_refid);
 }
 
 void InventoryManager::UpdateStackOnRemove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj,
@@ -181,7 +198,7 @@ void InventoryManager::OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBo
                                 const int32_t a_count, RE::TESObjectREFR* a_other) {
     auto inv_variants = GetInventoryModels(a_this, a_item, a_count);
     UpdateStackOnRemove(a_this, a_item, a_count);
-    UpdateStackOnAdd(a_other, a_item, a_count, inv_variants);
+    AddItemsToStack(a_other, a_item, a_count, inv_variants);
 }
 
 void InventoryManager::OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this,

@@ -91,7 +91,7 @@ void Hooks::MoveItemHooks<RefType>::pickUpObject(RefType* a_this, RE::TESObjectR
     if (!a_this || !a_object || !a_object->GetBaseObject() || !a_object->GetBaseObject()->IsInventoryObject() || a_count <= 0) {
         return pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 	}
-    Manager::GetSingleton()->OnItemPickup(a_this,a_object,a_count);
+    InventoryManager::GetSingleton()->OnItemPickup(a_this,a_object,a_count);
     pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 }
 

@@ -75,23 +75,7 @@ void Manager::ApplyNewQueuedItem(RE::TESForm* base, RefID refid, v_variant varia
     }
 }
 
-void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
-    auto worldStack = WorldStackManager::GetSingleton();
-    auto inventoryManager = InventoryManager::GetSingleton();
 
-    inventoryManager->SyncInventory(a_owner);
-
-    const auto base = a_obj->GetBaseObject();
-    const auto obj_refid = a_obj->GetFormID();
-
-
-
-    auto& wo_stack = worldStack->GetByReference(obj_refid);
-
-    inventoryManager->UpdateStackOnAdd(a_owner, base, a_count, wo_stack);
-
-    WorldStackManager::GetSingleton()->Remove(base->GetFormID(), obj_refid);
-}
 
 void Manager::ApplyInventoryModel(RE::InventoryEntryData* a1) {
     if (const auto ui = RE::UI::GetSingleton(); ui && a1) {
