@@ -1,9 +1,9 @@
 #pragma once
 #include <shared_mutex>
-#include "Str.h"
-#include "SaveLoadManager.h"
-#include "Serialization.h"
-#include "Singleton.h"
+#include "Lib/Str.h"
+#include "Lib/SaveLoadManager.h"
+#include "Adaptors/Serialization.h"
+#include "Lib/Singleton.h"
 
 class InventoryManager : public Singleton<InventoryManager> {
 	std::shared_mutex inventory_stacks_mutex_;

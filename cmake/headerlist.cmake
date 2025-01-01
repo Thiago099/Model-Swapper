@@ -1,17 +1,21 @@
 set(HEADER_FILES
 	include/PCH.h
-	include/logger.h
 	include/Plugin.h
-	include/Hooks.h
-	include/Manager.h
-	include/Str.h
-	include/AVObjects.h
-	include/TimeClass.h
-	include/SaveLoadManager.h
-	include/InventoryManager.h
-	include/UI.h
-	include/SKSEMenuFramework.h
-	include/Model.h
-	include/ModelSwapManager.h
-	include/Singleton.h
+
+	include/Lib/logger.h
+	include/Lib/Str.h
+	include/Lib/TimeClass.h
+	include/Lib/SaveLoadManager.h
+	include/Lib/SKSEMenuFramework.h
+	include/Lib/Singleton.h
+
+	include/Adaptors/Hooks.h
+	include/Adaptors/UI.h
+
+	include/Application/Manager.h
+	include/Application/AVObjects.h
+	include/Application/InventoryManager.h
+	include/Application/Model.h
+	include/Application/ModelSwapManager.h
+
 )

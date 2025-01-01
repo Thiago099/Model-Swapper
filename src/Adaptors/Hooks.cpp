@@ -1,5 +1,5 @@
-#include "Hooks.h"
-#include "Manager.h"
+#include "Adaptors/Hooks.h"
+#include "Application/Manager.h"
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {

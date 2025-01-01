@@ -1,6 +1,8 @@
 #pragma once
-#include "Model.h"
-#include "Singleton.h"
+
+#include "Application/Model.h"
+#include "Lib/Singleton.h"
+
 class ModelSwapManager : public Singleton<ModelSwapManager> {
     models sources;
     void ApplyImpl(RE::TESObjectARMA* base, variantId id) const;

@@ -1,8 +1,9 @@
 
 #pragma once
 
-#include "Config.h"
-#include "Str.h"
+#include "Application/Config.h"
+#include "Lib/Str.h"
+
 struct variant {
     const char* model;
     const char* key;

@@ -1,5 +1,9 @@
-#include "Persistence.h"
-#include "ModelSwapManager.h"
+#include "Adaptors/Persistence.h"
+#include "Application/ModelSwapManager.h"
+
+#include "Application/Manager.h"
+#include "Application/Config.h"
+#include "Lib/Ini.h"
 
 const std::string pattern = "_MS.json";
 const std::string directory = "Data/";

@@ -1,6 +1,6 @@
-#include "ModelSwapManager.h"
-#include "Serialization.h"
-
+#include "Application/ModelSwapManager.h"
+#include "Adaptors/Serialization.h"
+#include "Application/AVObjects.h"
 
 void ModelSwapManager::Apply(RE::TESForm* base, variantId variant) {
     if (auto obj = base->As<RE::TESObjectARMO>()) {

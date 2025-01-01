@@ -1,5 +1,6 @@
-#include "InventoryManager.h"
-#include "ModelSwapManager.h"
+#include "Application/InventoryManager.h"
+#include "Application/ModelSwapManager.h"
+
 void InventoryManager::ClearData() {
     std::unique_lock lock_inv(inventory_stacks_mutex_);
     std::unique_lock lock_var(applied_variants_mutex_);

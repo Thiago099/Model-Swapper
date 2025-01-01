@@ -1,6 +1,5 @@
 #pragma once
-#include "SKSEMenuFramework.h"
-#include "Manager.h"
+
 
 namespace UI {
     void Install();

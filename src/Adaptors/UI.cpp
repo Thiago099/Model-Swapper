@@ -1,4 +1,7 @@
-#include "UI.h"
+#include "Adaptors/UI.h"
+#include "Lib/SKSEMenuFramework.h"
+#include "Application/Manager.h"
+#include "Application/InventoryManager.h"
 
 void UI::Install() {
 

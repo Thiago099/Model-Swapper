@@ -1,7 +1,9 @@
-#include "Manager.h"
-#include "Serialization.h"
+#include "Application/Manager.h"
+#include "Application/ModelSwapManager.h"
+
+#include "Adaptors/Serialization.h"
+
 #include <ranges>
-#include "ModelSwapManager.h"
 
 void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
     if (const auto base = a_entry->GetObject()) {

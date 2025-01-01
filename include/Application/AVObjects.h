@@ -1,8 +1,8 @@
 #pragma once
-#include "Str.h"
-#include "TimeClass.h"
-#include "Config.h"
-#include "Model.h"
+#include "Lib/Str.h"
+#include "Lib/TimeClass.h"
+#include "Application/Config.h"
+#include "Application/Model.h"
 
 class AVObject {
 public:

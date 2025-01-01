@@ -1,6 +1,7 @@
 #pragma once
-#include "TimeClass.h"
-#include "Singleton.h"
+#include "Lib/TimeClass.h"
+#include "Lib/Singleton.h"
+
 class Config :public Singleton<Config>{
 public:
     bool BypassTemporalActivation = false;

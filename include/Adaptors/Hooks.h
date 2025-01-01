@@ -1,6 +1,7 @@
 #pragma once
-#include "SaveLoadManager.h"
-#include "InventoryManager.h"
+#include "Application/InventoryManager.h"
+#include "Lib/SaveLoadManager.h"
+
 namespace Hooks {
 
     struct ReplaceTextureOnObjectsHook {

@@ -1,11 +1,15 @@
 set(SOURCE_FILES
 	src/Plugin.cpp
-	src/Manager.cpp
-	src/Persistence.cpp
-	src/Hooks.cpp
-	src/SaveLoadManager.cpp
-	src/Serialization.cpp
-	src/InventoryManager.cpp
-	src/UI.cpp
-	src/ModelSwapManager.cpp
+
+	src/Application/Manager.cpp
+	src/Application/InventoryManager.cpp
+	src/Application/ModelSwapManager.cpp
+	
+	src/Adaptors/Hooks.cpp
+	src/Adaptors/Persistence.cpp
+	src/Adaptors/Serialization.cpp
+	src/Adaptors/UI.cpp
+
+	src/Lib/SaveLoadManager.cpp
+	
 )

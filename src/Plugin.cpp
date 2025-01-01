@@ -1,4 +1,10 @@
 #include "Plugin.h"
+#include "Lib/Logger.h"
+#include "Adaptors/Hooks.h"
+#include "Adaptors/Persistence.h"
+#include "Lib/TimeClass.h"
+#include "Adaptors/UI.h"
+#include "Application/Manager.h"
 
 void OnMessage(SKSE::MessagingInterface::Message* message) {
     if (message->type == SKSE::MessagingInterface::kDataLoaded) {

@@ -1,6 +1,6 @@
 #pragma once
-#include "InventoryManager.h"
-#include "Singleton.h"
+#include "Application/InventoryManager.h"
+#include "Lib/Singleton.h"
 class Manager : public Singleton<Manager>{
     const char* lastSave = "NEW";
     void SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry);
