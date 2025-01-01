@@ -5,7 +5,7 @@
 #include "Adaptors/Serialization.h"
 #include "Application/WorldStackManager.h"
 #include <ranges>
-#include "Application/InventoryManager.h"
+#include "Application/InventoyStackManager.h"
 
 void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
     if (const auto base = a_entry->GetObject()) {

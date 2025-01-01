@@ -1,7 +1,7 @@
 #include "Adaptors/UI.h"
 #include "Lib/SKSEMenuFramework.h"
 #include "Application/Manager.h"
-#include "Application/InventoryManager.h"
+#include "Application/InventoyStackManager.h"
 #include "Application/WorldStackManager.h"
 #include "Application/DropQueueManager.h"
 void UI::Install() {

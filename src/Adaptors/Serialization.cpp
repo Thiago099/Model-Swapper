@@ -1,7 +1,7 @@
 #include "Adaptors/Serialization.h"
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/binary_iarchive.hpp>
-#include "Application/InventoryManager.h"
+#include "Application/InventoyStackManager.h"
 #include "Application/WorldStackManager.h"
 namespace Serialization {
     void saveDataBinary(const Data& data, const std::string& filename) {

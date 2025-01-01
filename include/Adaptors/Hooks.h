@@ -1,5 +1,5 @@
 #pragma once
-#include "Application/InventoryManager.h"
+#include "Application/InventoyStackManager.h"
 #include "Lib/SaveLoadManager.h"
 #include "Application/Manager.h"
 namespace Hooks {

@@ -1,4 +1,4 @@
-#include "Application/InventoryManager.h"
+#include "Application/InventoyStackManager.h"
 #include "Application/ModelSwapManager.h"
 #include "Application/WorldStackManager.h"
 #include "Application/ApplicationUtils.h"
