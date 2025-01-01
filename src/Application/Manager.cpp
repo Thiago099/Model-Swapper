@@ -160,3 +160,42 @@ void Manager::ApplyModelToReference(RE::TESObjectREFR* a_ref)
         ApplyNewNonInventoryItem(base, refid); 
 	}
 }
+
+void Manager::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
+    if (auto variants = InventoyStackManager::GetSingleton()->GetAllInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
+        DropQueueManager::GetSingleton()->AddToDropQueue(a_obj->GetFormID(), variants);
+    }
+    InventoyStackManager::GetSingleton()->Remove(a_owner, a_obj, a_count);
+}
+
+void Manager::OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,
+                         const int32_t a_count) {
+    if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
+        OnItemDrop(a_this, a_item, a_count);
+    } else {
+        InventoyStackManager::GetSingleton()->Remove(a_this, a_item, a_count);
+    }
+}
+
+void Manager::OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item, const int32_t a_count,
+                             RE::TESObjectREFR* a_other) {
+    auto inv_variants = InventoyStackManager::GetSingleton()->GetAllInventoryModels(a_this, a_item, a_count);
+    InventoyStackManager::GetSingleton()->Remove(a_this, a_item, a_count);
+    InventoyStackManager::GetSingleton()->AddMultiple(a_other, a_item, a_count, inv_variants);
+}
+
+void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
+    auto worldStack = WorldStackManager::GetSingleton();
+    auto inventoryManager = InventoyStackManager::GetSingleton();
+
+    inventoryManager->Sync(a_owner);
+
+    const auto base = a_obj->GetBaseObject();
+    const auto obj_refid = a_obj->GetFormID();
+
+    auto& wo_stack = worldStack->GetByReference(obj_refid);
+
+    inventoryManager->AddMultiple(a_owner, base, a_count, wo_stack);
+
+    WorldStackManager::GetSingleton()->Remove(base->GetFormID(), obj_refid);
+}
