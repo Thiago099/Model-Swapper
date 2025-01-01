@@ -2,6 +2,7 @@
 #include "Lib/SKSEMenuFramework.h"
 #include "Application/Manager.h"
 #include "Application/InventoryManager.h"
+#include "Application/WorldStackManager.h"
 
 void UI::Install() {
 
@@ -75,7 +76,7 @@ void __stdcall UI::Queue::Render() {
 
 
 void __stdcall UI::WorldStacks::Render() {
-    auto manager = InventoryManager::GetSingleton();
+    auto manager = WorldStackManager::GetSingleton();
 
     for (auto [key, value] : manager->GetWorldObjectStacks()) {
         if (value.size() == 0) {

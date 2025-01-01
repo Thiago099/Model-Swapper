@@ -34,9 +34,10 @@ namespace Serialization {
 			const std::map<RefID, v_variant>& worldobject_stacks);
 
     };
-    void saveDataBinary(const Data &data, const std::string &filename);
 
-    void loadDataBinary(Data &data, const std::string &filename);
+    void LoadSerializedData(const char* filename);
+
+    void SerializeData(const char* filename);
 
 }
 

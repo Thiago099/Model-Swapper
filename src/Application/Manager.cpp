@@ -2,7 +2,7 @@
 #include "Application/ModelSwapManager.h"
 
 #include "Adaptors/Serialization.h"
-
+#include "Application/WorldStackManager.h"
 #include <ranges>
 
 void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
@@ -21,6 +21,76 @@ void Manager::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntry
             }
         }
     }
+}
+
+void Manager::ApplyNewWoldStack(RE::TESForm* base, RefID refid) {
+    auto worldStack = WorldStackManager::GetSingleton();
+    auto modelSwap = ModelSwapManager::GetSingleton();
+    auto id = modelSwap->Process(base, refid);
+    if (id != -1) {
+        logger::trace("Found variant");
+        modelSwap->Apply(base, id);
+        worldStack->Add(refid, id);
+    }
+    #ifndef NDEBUG
+        else {
+            logger::warn("No variant found for refid: {:x}", refid);
+        }
+    #endif
+}
+
+void Manager::ApplyNewNonInventoryItem(RE::TESForm* base, RefID refid) {
+    logger::trace("other stuff");
+
+    auto modelSwapManger = ModelSwapManager::GetSingleton();
+    auto id = modelSwapManger->Process(base, refid);
+    modelSwapManger->Apply(base, id);
+
+    #ifndef NDEBUG
+
+    if (id != -1) {
+        logger::trace("Model applied to refid: {:x}", refid);
+    } else {
+        logger::trace("Model applied");
+    }
+
+    #endif
+}
+
+void Manager::ApplyNewQueuedItem(RE::TESForm* base, RefID refid, v_variant variant_vector, int ref_count) {
+    auto invManager = InventoryManager::GetSingleton();
+    auto worldStack = WorldStackManager::GetSingleton();
+    auto modelSwap = ModelSwapManager::GetSingleton();
+    auto top_stack = invManager->GetTopOfStack(variant_vector, ref_count);
+    top_stack = top_stack.empty() ? std::vector<int32_t>(ref_count) : top_stack;
+    if (top_stack.back() == -1) {
+        auto id = modelSwap->Process(base, refid);
+        if (id != -1) {
+            modelSwap->Apply(base, id);
+            worldStack->Add(refid, id);
+        }
+    } else {
+        modelSwap->Apply(base, top_stack.back());
+        worldStack->Set(refid, top_stack);
+    }
+}
+
+void Manager::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
+    auto worldStack = WorldStackManager::GetSingleton();
+    auto inventoryManager = InventoryManager::GetSingleton();
+
+    inventoryManager->SyncInventory(a_owner);
+
+    const auto base = a_obj->GetBaseObject();
+    const auto obj_refid = a_obj->GetFormID();
+
+
+
+    auto& wo_stack = worldStack->GetByReference(obj_refid);
+
+    inventoryManager->UpdateStackOnAdd(a_owner, base, a_count, wo_stack);
+
+    WorldStackManager::GetSingleton()->Remove(base->GetFormID(), obj_refid);
 }
 
 void Manager::ApplyInventoryModel(RE::InventoryEntryData* a1) {
@@ -83,23 +153,25 @@ void Manager::ApplyModelToReference(RE::TESObjectREFR* a_ref)
 	if (base->IsInventoryObject()) {
         logger::trace("inv object");
         auto invManager = InventoryManager::GetSingleton();
-        invManager->ProcessReference(a_ref);
-    } else {
-        logger::trace("other stuff");
-        auto modelSwapManger = ModelSwapManager::GetSingleton();
-        auto id = modelSwapManger->Process(base, refid);
-        modelSwapManger->Apply(base, id);
+        auto worldStack = WorldStackManager::GetSingleton();
+        auto modelSwap = ModelSwapManager::GetSingleton();
 
-        #ifndef NDEBUG
-            
-        if (id != -1) {
-            logger::trace("Model applied to refid: {:x}", refid);
+        if (auto ref_variant = worldStack->GetByReference(refid); ref_variant.size() > 0) {
+            logger::trace("Already applied");
+            modelSwap->Apply(base, ref_variant.back());
         } 
-        else {
-            logger::trace("Model applied");
+        if (auto variant_vector = invManager->FetchFromQueue(base->GetFormID()); !variant_vector.empty()) {
+            logger::trace("Queued");
+            ApplyNewQueuedItem(base, refid, variant_vector, ref_count);
         }
-
-        #endif
-      
+        else
+        {
+            logger::trace("None");
+            ApplyNewWoldStack(base, refid);
+        }
+    } 
+    else 
+    {
+        ApplyNewNonInventoryItem(base, refid); 
 	}
 }

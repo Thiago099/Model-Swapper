@@ -8,6 +8,7 @@ set(HEADER_FILES
 	include/Application/Model.h
 	include/Application/ModelSwapManager.h
 	include/Application/Variants.h
+	include/Application/WorldStackManager.h
 
 	include/Adaptors/Hooks.h
 	include/Adaptors/UI.h

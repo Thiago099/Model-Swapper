@@ -1,5 +1,6 @@
 #include "Adaptors/Hooks.h"
 #include "Application/Manager.h"
+#include "Adaptors/Serialization.h"
 
 bool Hooks::ReplaceTextureOnObjectsHook::ShouldBackgroundClone(RE::TESObjectREFR* ref) {
     if (ref) {
@@ -47,7 +48,7 @@ void Hooks::SaveHook::PrepareFileSavePath(RE::BSWin32SaveDataSystemUtility* a_th
 	    logger::info("File name: {}", a_fileName);
 
         try {
-            InventoryManager::GetSingleton()->SerializeData(a_fileName);
+            Serialization::SerializeData(a_fileName);
         } catch (const std::exception& e) {
             logger::error("Failed to serialize data: {}", e.what());
         }

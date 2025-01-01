@@ -5,7 +5,7 @@
 #include "Lib/TimeClass.h"
 #include "Adaptors/UI.h"
 #include "Application/Manager.h"
-
+#include "Adaptors/Serialization.h"
 void OnMessage(SKSE::MessagingInterface::Message* message) {
     if (message->type == SKSE::MessagingInterface::kDataLoaded) {
     }
@@ -27,7 +27,7 @@ void OnMessage(SKSE::MessagingInterface::Message* message) {
 
         const auto file_path = Serialization::serialization_path + file2load;
         try {
-            InventoryManager::GetSingleton()->LoadSerializedData(file_path.c_str());
+            Serialization::LoadSerializedData(file_path.c_str());
         } catch (const std::exception& e) {
             logger::error("Failed to load data: {}", e.what());
         }

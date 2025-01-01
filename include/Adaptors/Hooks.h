@@ -1,7 +1,7 @@
 #pragma once
 #include "Application/InventoryManager.h"
 #include "Lib/SaveLoadManager.h"
-
+#include "Application/Manager.h"
 namespace Hooks {
 
     struct ReplaceTextureOnObjectsHook {
@@ -91,7 +91,7 @@ void Hooks::MoveItemHooks<RefType>::pickUpObject(RefType* a_this, RE::TESObjectR
     if (!a_this || !a_object || !a_object->GetBaseObject() || !a_object->GetBaseObject()->IsInventoryObject() || a_count <= 0) {
         return pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 	}
-    InventoryManager::GetSingleton()->OnItemPickup(a_this,a_object,a_count);
+    Manager::GetSingleton()->OnItemPickup(a_this,a_object,a_count);
     pick_up_object_(a_this, a_object, a_count, a_arg3, a_play_sound);
 }
 
@@ -108,10 +108,10 @@ RE::ObjectRefHandle* Hooks::MoveItemHooks<RefType>::RemoveItem(RefType* a_this, 
 	auto manager = InventoryManager::GetSingleton();
 
 	if (a_move_to_ref) {
-        manager->MoveItem(a_this, a_item, a_count, a_move_to_ref);
+        manager->OnItemTransfer(a_this, a_item, a_count, a_move_to_ref);
 	}
 	else {
-        manager->DropItem(a_reason, a_this, a_item, a_count);
+        manager->OnItemDrop(a_reason, a_this, a_item, a_count);
 	}
 
 	return remove_item_(a_this, a_hidden_return_argument, a_item, a_count, a_reason, a_extra_list, a_move_to_ref, a_drop_loc, a_rotate);

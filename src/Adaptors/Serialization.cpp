@@ -1,26 +1,77 @@
 #include "Adaptors/Serialization.h"
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/binary_iarchive.hpp>
+#include "Application/InventoryManager.h"
+#include "Application/WorldStackManager.h"
+namespace Serialization {
+    void saveDataBinary(const Data& data, const std::string& filename) {
+        std::ofstream ofs(filename + ".bin", std::ios::binary);
+        if (!ofs) {
+            throw std::runtime_error("Failed to open file for writing: " + filename);
+        }
 
-
-void Serialization::saveDataBinary(const Data& data, const std::string& filename) {
-    std::ofstream ofs(filename + ".bin", std::ios::binary);
-    if (!ofs) {
-        throw std::runtime_error("Failed to open file for writing: " + filename);
+        boost::archive::binary_oarchive oa(ofs);
+        oa << data;
     }
 
-    boost::archive::binary_oarchive oa(ofs);
-    oa << data;
+    void loadDataBinary(Data& data, const std::string& filename) {
+        std::ifstream ifs(filename + ".bin", std::ios::binary);
+        if (!ifs) {
+            throw std::runtime_error("Failed to open file for reading: " + filename);
+        }
+
+        boost::archive::binary_iarchive ia(ifs);
+        ia >> data;
+    }
 }
 
-void Serialization::loadDataBinary(Data& data, const std::string& filename) {
-    std::ifstream ifs(filename + ".bin", std::ios::binary);
-    if (!ifs) {
-        throw std::runtime_error("Failed to open file for reading: " + filename);
+
+void Serialization::LoadSerializedData(const char* filename) {
+    logger::info("Loading data from {}", filename);
+
+
+    Serialization::Data saved_data;
+    Serialization::loadDataBinary(saved_data, filename);
+
+    {
+        auto inventory = InventoryManager::GetSingleton();
+        inventory->ClearData();
+        std::unique_lock lock_var(inventory->GetInventoryMutex());
+
+        for (const auto& [owner_refid, item_map] : saved_data.inventory) {
+            for (const auto& [item_refid, model_indices] : item_map) {
+                for (const auto model_index : model_indices) {
+                    inventory->Add(owner_refid, item_refid, model_index);
+                }
+            }
+        }
     }
 
-    boost::archive::binary_iarchive ia(ifs);
-    ia >> data;
+    {
+        auto worldStack = WorldStackManager::GetSingleton();
+        worldStack->Clean();
+        std::unique_lock lock_inv(worldStack->GetMutex());
+        for (const auto& [owner_refid, model_indices] : saved_data.worldobject) {
+            for (const auto model_index : model_indices) {
+                worldStack->Add(owner_refid, model_index);
+            }
+        }
+    }
+
+}
+
+void Serialization::SerializeData(const char* filename) {
+    const auto file_path = Serialization::serialization_path + filename;
+
+    auto worldStack = WorldStackManager::GetSingleton();
+    auto inventory = InventoryManager::GetSingleton();
+
+    std::shared_lock lock_inv(inventory->GetInventoryMutex());
+    std::shared_lock lock_var(worldStack->GetMutex());
+
+    const Serialization::Data data(inventory->GetInventoryStacks(), worldStack->GetWorldObjectStacks());
+
+    Serialization::saveDataBinary(data, file_path);
 }
 
 
