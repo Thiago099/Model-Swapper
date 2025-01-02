@@ -26,4 +26,6 @@ public:
                         RE::TESObjectREFR* a_other);
 
     void OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count);
+
+    void OnContainerLoad(RE::TESObjectREFR* a_container);
 };

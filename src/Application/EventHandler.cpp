@@ -62,7 +62,7 @@ void EventHandler::ApplyNewNonInventoryItem(RE::TESForm* base, RefID refid) {
 void EventHandler::ApplyNewQueuedItem(RE::TESForm* base, RefID refid, v_variant variant_vector, int ref_count) {
     auto worldStack = WorldStack::GetSingleton();
     auto modelSwap = ModelSwap::GetSingleton();
-    auto top_stack = ApplicationUtils::GetTopOfStack(variant_vector, ref_count);
+    auto top_stack = ApplicationUtils::GetNItems(variant_vector, ref_count);
     top_stack = top_stack.empty() ? std::vector<int32_t>(ref_count) : top_stack;
     if (top_stack.back() == -1) {
         auto id = modelSwap->Process(base, refid);
@@ -121,6 +121,7 @@ void EventHandler::OnNpcLoad(RE::TESObjectREFR* ref) {
             }
         }
     }
+    OnContainerLoad(ref);
 }
 
 void EventHandler::OnGenericLoadEvent(RE::TESObjectREFR* a_ref)
@@ -159,10 +160,14 @@ void EventHandler::OnGenericLoadEvent(RE::TESObjectREFR* a_ref)
     {
         ApplyNewNonInventoryItem(base, refid); 
 	}
+
+    OnContainerLoad(a_ref);
 }
 
 void EventHandler::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
-    if (auto variants = InventoyStack::GetSingleton()->GetAllInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
+    auto items = InventoyStack::GetSingleton()->GetItemsByContainerAndBase(a_owner, a_obj);
+    if (auto variants = ApplicationUtils::GetNItems(items, a_count);
+        !variants.empty()) {
         DropQueue::GetSingleton()->Add(a_obj->GetFormID(), variants);
     }
     InventoyStack::GetSingleton()->Remove(a_owner, a_obj, a_count);
@@ -179,23 +184,53 @@ void EventHandler::OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR
 
 void EventHandler::OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item, const int32_t a_count,
                              RE::TESObjectREFR* a_other) {
-    auto inv_variants = InventoyStack::GetSingleton()->GetAllInventoryModels(a_this, a_item, a_count);
+    auto allItems = InventoyStack::GetSingleton()->GetItemsByContainerAndBase(a_this, a_item);
+    auto inv_variants = ApplicationUtils::GetNItems(allItems, a_count);
     InventoyStack::GetSingleton()->Remove(a_this, a_item, a_count);
-    InventoyStack::GetSingleton()->AddMultiple(a_other, a_item, a_count, inv_variants);
+    InventoyStack::GetSingleton()->AddMultiple(a_other, a_item, inv_variants);
 }
 
 void EventHandler::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
     auto worldStack = WorldStack::GetSingleton();
     auto inventoryManager = InventoyStack::GetSingleton();
 
-    inventoryManager->Sync(a_owner);
-
     const auto base = a_obj->GetBaseObject();
     const auto obj_refid = a_obj->GetFormID();
 
     auto& wo_stack = worldStack->GetByReference(obj_refid);
 
-    inventoryManager->AddMultiple(a_owner, base, a_count, wo_stack);
+    inventoryManager->AddMultiple(a_owner, base, wo_stack);
 
     WorldStack::GetSingleton()->Remove(base->GetFormID(), obj_refid);
+}
+
+void EventHandler::OnContainerLoad(RE::TESObjectREFR* a_container) {
+    auto modelSwap = ModelSwap::GetSingleton();
+    auto inventoryStack = InventoyStack::GetSingleton();
+
+    if (auto container = a_container->GetContainer()) {
+    
+		for (std::uint32_t i = 0; i < container->numContainerObjects; ++i) {
+            auto item = container->containerObjects[i];
+            if (item && item->obj) {
+
+                auto variants = inventoryStack->GetItemsByContainerAndBase(a_container, item->obj);
+
+                auto i = item->count - variants.size();
+
+                logger::trace("Container {} item: {} count: {}", a_container->GetName(), item->obj->GetName(), i);
+
+                while (i > 0) {
+
+                    auto variantId = modelSwap->Process(item->obj, -1);
+
+                    if (variantId != -1) {
+                        inventoryStack->Add(a_container->GetFormID(), item->obj->GetFormID(), variantId);
+                    }
+
+					i--;
+				}
+            }
+        }
+    }
 }

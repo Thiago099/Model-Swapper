@@ -5,7 +5,7 @@
 
 
 variantId ModelSwap::PickRandomVariant(variants& source, const uint32_t seed) { 
-    std::mt19937 engine(seed);
+    std::mt19937 engine(seed == static_cast<uint32_t>(-1) ? std::random_device{}() : seed);
     std::uniform_int_distribution<uint32_t> dist(0, source.size() - 1);
     return dist(engine);
 }
