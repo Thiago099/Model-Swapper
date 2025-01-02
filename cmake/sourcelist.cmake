@@ -5,7 +5,6 @@ set(SOURCE_FILES
 	src/Application/AVObjects.cpp
 	src/Application/InventoyStackManager.cpp
 	src/Application/ModelSwapManager.cpp
-	src/Application/Variants.cpp
 	src/Application/WorldStackManager.cpp
 	src/Application/ApplicationUtils.cpp
 	src/Application/DropQueueManager.cpp

@@ -2,7 +2,7 @@
 #include "Lib/Str.h"
 #include "Lib/TimeClass.h"
 #include "Application/Config.h"
-#include "Application/Variants.h"
+#include "Application/ModelSwapManager.h"
 
 #define RETURN_IF_NOT_NEGATIVE(x) if (x != -1) return x;
 
@@ -20,7 +20,7 @@ AVObjectARMA::AVObjectARMA(RE::TESObjectARMA* base) : base(base) {
     }
 }
 
-int32_t AVObjectARMA::GetVariant(const models& models, int seed) {
+int32_t AVObjectARMA::GetVariant(int seed) {
     if (!base) {
         return -1;
     }
@@ -29,46 +29,58 @@ int32_t AVObjectARMA::GetVariant(const models& models, int seed) {
 
     if (base->bipedModels) {
 
-        result = Variants::pickVariant(models, initialMaleThirdPersonModle, seed);
+        result = ModelSwapManager::GetSingleton()
+            ->PickVariant(initialMaleThirdPersonModle, seed);
 
         RETURN_IF_NOT_NEGATIVE(result);
 
-        result = Variants::pickVariant(models, initialFemaleThirdPersonModle, seed);
+        result = ModelSwapManager::GetSingleton()
+            ->PickVariant(initialFemaleThirdPersonModle, seed);
 
         RETURN_IF_NOT_NEGATIVE(result);
 
     }
     if (base->bipedModel1stPersons) {
 
-        result = Variants::pickVariant(models, initialMaleFirstPersonModle, seed);
+        result = ModelSwapManager::GetSingleton()
+            ->PickVariant(initialMaleFirstPersonModle, seed);
 
         RETURN_IF_NOT_NEGATIVE(result);
 
-        result = Variants::pickVariant(models, initialFemaleFirstPersonModel, seed);
+        result = ModelSwapManager::GetSingleton()
+            ->PickVariant(initialFemaleFirstPersonModel, seed);
 
         RETURN_IF_NOT_NEGATIVE(result);
     }
     return result;
 }
 
-void AVObjectARMA::Apply(const models& models, int32_t _variant)  {
+void AVObjectARMA::Apply(int32_t _variant)  {
     if (!base) {
         return;
     }
 
     if (base->bipedModels) {
-        if (const auto item = Variants::getVariant(models, initialMaleThirdPersonModle, _variant)) {
+        if (const auto item =
+                ModelSwapManager::GetSingleton()
+            ->GetVariant(initialMaleThirdPersonModle, _variant)) {
             base->bipedModels[RE::SEXES::kMale].SetModel(item->model);
         }
-        if (const auto item = Variants::getVariant(models, initialFemaleThirdPersonModle, _variant)) {
+        if (const auto item =
+                ModelSwapManager::GetSingleton()
+            ->GetVariant(initialFemaleThirdPersonModle, _variant)) {
             base->bipedModels[RE::SEXES::kFemale].SetModel(item->model);
         }
     }
     if (base->bipedModel1stPersons) {
-        if (const auto item = Variants::getVariant(models, initialMaleFirstPersonModle, _variant)) {
+        if (const auto item =
+            ModelSwapManager::GetSingleton()
+            ->GetVariant(initialMaleFirstPersonModle, _variant)) {
             base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(item->model);
         }
-        if (const auto item = Variants::getVariant(models, initialFemaleFirstPersonModel, _variant)) {
+        if (const auto item =
+            ModelSwapManager::GetSingleton()
+            ->GetVariant(initialFemaleFirstPersonModel, _variant)) {
             base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(item->model);
         }
     }
@@ -83,14 +95,15 @@ AVModel::AVModel(RE::TESForm* base) : base(base) {
     }
 }
 
-int32_t AVModel::GetVariant(const models& models, int seed) {
+int32_t AVModel::GetVariant(int seed) {
     if (!base) {
         return -1;
     }
     int32_t result = -1;
     if (const auto bm = base->As<RE::TESModel>()) {
 
-        result = Variants::pickVariant(models, model, seed);
+        result = ModelSwapManager::GetSingleton()
+            ->PickVariant(model, seed);
 
         RETURN_IF_NOT_NEGATIVE(result);
     }
@@ -98,13 +111,14 @@ int32_t AVModel::GetVariant(const models& models, int seed) {
     return result;
 }
 
-void AVModel::Apply(const models& models, int32_t _variant) {
+void AVModel::Apply(int32_t _variant) {
     if (!base) {
         return;
     }
 
     if (const auto bm = base->As<RE::TESModel>()) {
-        if (const auto item = Variants::getVariant(models, model, _variant)) {
+        if (const auto item = ModelSwapManager::GetSingleton()
+            ->GetVariant(model, _variant)) {
             bm->SetModel(item->model);
         }
     }
@@ -119,32 +133,36 @@ AVObjectARMO::AVObjectARMO(RE::TESObjectARMO* base) : base(base) {
     female = base->worldModels[RE::SEXES::kFemale].GetModel();
 }
 
-int32_t AVObjectARMO::GetVariant(const models& models, int seed) {
+int32_t AVObjectARMO::GetVariant(int seed) {
     if (!base) {
         return -1;
     }
     int32_t result = -1;
 
-    result = Variants::pickVariant(models, male, seed);
+    result = ModelSwapManager::GetSingleton()
+        ->PickVariant(male, seed);
 
     RETURN_IF_NOT_NEGATIVE(result);
 
-    result = Variants::pickVariant(models, female, seed);
+    result = ModelSwapManager::GetSingleton()
+        ->PickVariant(female, seed);
 
     RETURN_IF_NOT_NEGATIVE(result);
 
     return -1;
 }
 
-void AVObjectARMO::Apply(const models& models, int32_t _variant) {
+void AVObjectARMO::Apply(int32_t _variant) {
     if (!base) {
         return;
     }
 
-    if (auto item = Variants::getVariant(models, male, _variant)) {
+    if (auto item = ModelSwapManager::GetSingleton()
+        ->GetVariant(male, _variant)) {
         base->worldModels[RE::SEXES::kMale].SetModel(item->model);
     }
-    if (auto item = Variants::getVariant(models, female, _variant)) {
+    if (auto item = ModelSwapManager::GetSingleton()
+        ->GetVariant(female, _variant)) {
         base->worldModels[RE::SEXES::kFemale].SetModel(item->model);
     }
 }
@@ -158,32 +176,36 @@ AVObjectWEAP::AVObjectWEAP(RE::TESObjectWEAP* base) : base(base) {
     model = base->GetModel();
 }
 
-int32_t AVObjectWEAP::GetVariant(const models& models, int seed) {
+int32_t AVObjectWEAP::GetVariant(int seed) {
     if (!base) {
         return -1;
     }
     int32_t result = -1;
 
-    result = Variants::pickVariant(models, firstPersonModel, seed);
+    result = ModelSwapManager::GetSingleton()
+        ->PickVariant(firstPersonModel, seed);
 
     RETURN_IF_NOT_NEGATIVE(result);
 
-    result = Variants::pickVariant(models, model, seed);
+    result = ModelSwapManager::GetSingleton()
+        ->PickVariant(model, seed);
 
     RETURN_IF_NOT_NEGATIVE(result);
 
     return result;
 }
 
-void AVObjectWEAP::Apply(const models& models, int32_t _variant) {
+void AVObjectWEAP::Apply(int32_t _variant) {
     if (!base) {
         return;
     }
 
-    if (auto item = Variants::getVariant(models, firstPersonModel, _variant)) {
+    if (auto item = ModelSwapManager::GetSingleton()
+        ->GetVariant(firstPersonModel, _variant)) {
         base->firstPersonModelObject->SetModel(item->model);
     }
-    if (auto item = Variants::getVariant(models, model, _variant)) {
+    if (auto item = ModelSwapManager::GetSingleton()
+        ->GetVariant(model, _variant)) {
         base->SetModel(item->model);
     }
 }

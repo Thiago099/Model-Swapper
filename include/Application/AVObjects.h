@@ -6,8 +6,8 @@
 class AVObject {
 public:
     virtual ~AVObject() = default;
-    virtual int32_t GetVariant(const models& models, int seed) = 0;
-    virtual void Apply(const models& models, int32_t variant) = 0;
+    virtual int32_t GetVariant(int seed) = 0;
+    virtual void Apply(int32_t variant) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
 
@@ -25,8 +25,8 @@ public:
         return base;
     }
 
-    int32_t GetVariant(const models& models, int seed) override;
-    virtual void Apply(const models& models, int32_t _variant) override;
+    int32_t GetVariant(int seed) override;
+    virtual void Apply(int32_t _variant) override;
 
 };
 
@@ -38,8 +38,8 @@ public:
 
     RE::TESForm* GetBase() override { return base; }
 
-    int32_t GetVariant(const models& models, int seed) override;
-    virtual void Apply(const models& models, int32_t _variant) override;
+    int32_t GetVariant(int seed) override;
+    virtual void Apply(int32_t _variant) override;
 };
 
 class AVObjectARMO : public AVObject {
@@ -53,8 +53,8 @@ public:
 
     RE::TESForm* GetBase() override { return base; }
 
-    int32_t GetVariant(const models& models, int seed) override;
-    virtual void Apply(const models& models, int32_t _variant) override;
+    int32_t GetVariant(int seed) override;
+    virtual void Apply(int32_t _variant) override;
 };
 
 class AVObjectWEAP : public AVObject {
@@ -67,8 +67,8 @@ public:
     AVObjectWEAP(RE::TESObjectWEAP* base) ;
     RE::TESForm* GetBase() override { return base; }
 
-        int32_t GetVariant(const models& models, int seed) override;
-    virtual void Apply(const models& models, int32_t _variant) override;
+        int32_t GetVariant(int seed) override;
+    virtual void Apply(int32_t _variant) override;
 };
 
 class AVObjectFactory

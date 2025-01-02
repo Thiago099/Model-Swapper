@@ -7,7 +7,6 @@ set(HEADER_FILES
 	include/Application/InventoyStackManager.h
 	include/Application/Model.h
 	include/Application/ModelSwapManager.h
-	include/Application/Variants.h
 	include/Application/WorldStackManager.h
 	include/Application/ApplicationUtils.h
 	include/Application/DropQueueManager.h
