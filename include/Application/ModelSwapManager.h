@@ -7,6 +7,10 @@ class ModelSwapManager : public Singleton<ModelSwapManager> {
     models sources;
 
 
+    variantId PickRandomVariant(variants& source, const uint32_t seed);
+
+    bool DoesTemporalOverrideStopTheReplacement(variant* item);
+
 public:
     void Apply(RE::TESForm* base, variantId variant);
     const variantId Process(RE::TESForm* base, RefID id);

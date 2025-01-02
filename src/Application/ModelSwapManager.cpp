@@ -2,6 +2,42 @@
 #include "Adaptors/Serialization.h"
 #include "Application/AVObjects.h"
 
+
+
+variantId ModelSwapManager::PickRandomVariant(variants& source, const uint32_t seed) { 
+    std::mt19937 engine(seed);
+    std::uniform_int_distribution<uint32_t> dist(0, source.size() - 1);
+    return dist(engine);
+}
+
+bool ModelSwapManager::DoesTemporalOverrideStopTheReplacement(variant* item) {
+    const auto config = Config::GetSingleton();
+
+    if (config->BypassTemporalActivation) {
+        return false;
+    }
+
+    auto now = config->NowOverride.exists ? config->NowOverride : Time::now();
+
+    #ifndef NDEBUG
+
+        now.log("now");
+        item->startDate.log("start");
+        item->endDate.log("end");
+
+    #endif
+
+    if (!item->startDate.exists || !now.exists || !item->endDate.exists) {
+        return false;
+    }
+
+    if (now.isBetweenMD(item->startDate, item->endDate)) {
+        return false;
+    }
+
+    return true;
+}
+
 void ModelSwapManager::Apply(RE::TESForm* base, variantId variant) {
 
     if (variant == -1) {
@@ -41,37 +77,21 @@ void ModelSwapManager::Register(std::string key, variants value) {
 int32_t ModelSwapManager::PickVariant(const char* str, const uint32_t seed) {
     const auto key = Str::processString(str);
     if (const auto it = sources.find(key); it != sources.end()) {
-        std::mt19937 engine(seed);
-        std::uniform_int_distribution<uint32_t> dist(0, it->second.size() - 1);
-        if (const uint32_t random_number = dist(engine); random_number < it->second.size()) {
-            const auto result = it->second.at(random_number);
-            const auto config = Config::GetSingleton();
 
-            if (config->BypassTemporalActivation) {
-                return random_number;
-            }
+        auto random_number = PickRandomVariant(it->second, seed);
 
-            auto now = config->NowOverride.exists ? config->NowOverride : Time::now();
+        const auto result = it->second.at(random_number);
 
-#ifndef NDEBUG
+        const auto config = Config::GetSingleton();
 
-            now.log("now");
-            result->startDate.log("start");
-            result->endDate.log("end");
+        if (DoesTemporalOverrideStopTheReplacement(result)) {
+			logger::trace("Replacement by variant {} stopped by temporal override", random_number);
+			return -1;
+		}
 
-#endif
+        return random_number;
 
-            if (!result->startDate.exists || !now.exists || !result->endDate.exists) {
-                logger::trace("date is fault, fallback yes {}", random_number);
-                return random_number;
-            }
-            if (now.isBetweenMD(result->startDate, result->endDate)) {
-                logger::trace("is in between replacing {}", random_number);
-                return random_number;
-            }
-
-            logger::trace("not in between doing nothing would be {}", random_number);
-        }
+        logger::trace("not in between doing nothing would be {}", random_number);
     }
     return -1;
 }
