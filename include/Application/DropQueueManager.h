@@ -9,6 +9,7 @@ class DropQueueManager : public Singleton<DropQueueManager> {
 
 public:
     void ClearData();
+
     void AddToDropQueue(FormID formid, v_variant& variant_vector);
 
     v_variant GetNextItemFromDropQueue(const FormID formId);

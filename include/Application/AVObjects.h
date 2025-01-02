@@ -11,7 +11,6 @@ public:
     virtual RE::TESForm* GetBase() = 0;
 };
 
-
 class AVObjectARMA final : public AVObject {
     const char* initialMaleThirdPersonModle = nullptr;
     const char* initialFemaleThirdPersonModle = nullptr;
@@ -31,7 +30,6 @@ public:
 
 };
 
-
 class AVModel final : public AVObject {
     const char* model = nullptr;
     RE::TESForm* base = nullptr;
@@ -43,7 +41,6 @@ public:
     int32_t GetVariant(const models& models, int seed) override;
     virtual void Apply(const models& models, int32_t _variant) override;
 };
-
 
 class AVObjectARMO : public AVObject {
     const char* male = nullptr;

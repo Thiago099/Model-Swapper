@@ -13,7 +13,7 @@ public:
     void Remove(FormID baseId, RefID obj_refid);
     void Add(RefID id, int32_t item);
     void Set(RefID id, v_variant items);
-    void Clean();
+    void CleanData();
 
     std::shared_mutex& GetMutex();
     std::map<RefID, v_variant> GetAll();

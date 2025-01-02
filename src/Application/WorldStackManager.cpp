@@ -16,7 +16,7 @@ void WorldStackManager::Set(RefID id, v_variant items) {
     world_object_stacks[id] = items; 
 }
 
-void WorldStackManager::Clean() {
+void WorldStackManager::CleanData() {
     std::unique_lock lock_var(applied_variants_mutex_);
     world_object_stacks.clear();
 }

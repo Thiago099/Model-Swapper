@@ -49,7 +49,7 @@ void Serialization::LoadSerializedData(const char* filename) {
 
     {
         auto worldStack = WorldStackManager::GetSingleton();
-        worldStack->Clean();
+        worldStack->CleanData();
         std::unique_lock lock_inv(worldStack->GetMutex());
         for (const auto& [owner_refid, model_indices] : saved_data.worldobject) {
             for (const auto model_index : model_indices) {
