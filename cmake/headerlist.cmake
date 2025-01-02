@@ -4,12 +4,12 @@ set(HEADER_FILES
 	
 	include/Application/EventHandler.h
 	include/Application/AVObjects.h
-	include/Application/InventoyStackManager.h
+	include/Application/InventoyStack.h
 	include/Application/Model.h
-	include/Application/ModelSwapManager.h
-	include/Application/WorldStackManager.h
+	include/Application/ModelSwap.h
+	include/Application/WorldStack.h
 	include/Application/ApplicationUtils.h
-	include/Application/DropQueueManager.h
+	include/Application/DropQueue.h
 
 	include/Adaptors/Hooks.h
 	include/Adaptors/UI.h

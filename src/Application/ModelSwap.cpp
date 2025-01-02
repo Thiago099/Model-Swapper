@@ -1,16 +1,16 @@
-#include "Application/ModelSwapManager.h"
+#include "Application/ModelSwap.h"
 #include "Adaptors/Serialization.h"
 #include "Application/AVObjects.h"
 
 
 
-variantId ModelSwapManager::PickRandomVariant(variants& source, const uint32_t seed) { 
+variantId ModelSwap::PickRandomVariant(variants& source, const uint32_t seed) { 
     std::mt19937 engine(seed);
     std::uniform_int_distribution<uint32_t> dist(0, source.size() - 1);
     return dist(engine);
 }
 
-bool ModelSwapManager::DoesTemporalOverrideStopTheReplacement(variant* item) {
+bool ModelSwap::DoesTemporalOverrideStopTheReplacement(variant* item) {
     const auto config = Config::GetSingleton();
 
     if (config->BypassTemporalActivation) {
@@ -38,7 +38,7 @@ bool ModelSwapManager::DoesTemporalOverrideStopTheReplacement(variant* item) {
     return true;
 }
 
-void ModelSwapManager::Apply(RE::TESForm* base, variantId variant) {
+void ModelSwap::Apply(RE::TESForm* base, variantId variant) {
 
     if (variant == -1) {
 		return;
@@ -49,7 +49,7 @@ void ModelSwapManager::Apply(RE::TESForm* base, variantId variant) {
         delete wrapper;
     }
 }
-const int32_t ModelSwapManager::Process(RE::TESForm* base, const RefID id) {
+const int32_t ModelSwap::Process(RE::TESForm* base, const RefID id) {
     int32_t result = -1;
 
     if (AVObject* wrapper = AVObjectFactory::Create(base)) {
@@ -60,7 +60,7 @@ const int32_t ModelSwapManager::Process(RE::TESForm* base, const RefID id) {
     return result;
 }
 
-void ModelSwapManager::Register(std::string key, variants value) {
+void ModelSwap::Register(std::string key, variants value) {
     key = Str::processString(key);
 
     if (const auto it = sources.find(key); it != sources.end()) {
@@ -74,7 +74,7 @@ void ModelSwapManager::Register(std::string key, variants value) {
     }
 }
 
-int32_t ModelSwapManager::PickVariant(const char* str, const uint32_t seed) {
+int32_t ModelSwap::PickVariant(const char* str, const uint32_t seed) {
     const auto key = Str::processString(str);
     if (const auto it = sources.find(key); it != sources.end()) {
 
@@ -96,7 +96,7 @@ int32_t ModelSwapManager::PickVariant(const char* str, const uint32_t seed) {
     return -1;
 }
 
-variant* ModelSwapManager::GetVariant(const char* str, const uint32_t variant) {
+variant* ModelSwap::GetVariant(const char* str, const uint32_t variant) {
     const auto key = Str::processString(str);
     if (const auto it = sources.find(key); it != sources.end()) {
         if (variant < it->second.size()) {

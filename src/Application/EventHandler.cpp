@@ -1,16 +1,16 @@
 #include "Application/EventHandler.h"
 #include "Application/ApplicationUtils.h"
-#include "Application/ModelSwapManager.h"
-#include "Application/DropQueueManager.h"
+#include "Application/ModelSwap.h"
+#include "Application/DropQueue.h"
 #include "Adaptors/Serialization.h"
-#include "Application/WorldStackManager.h"
+#include "Application/WorldStack.h"
 #include <ranges>
-#include "Application/InventoyStackManager.h"
+#include "Application/InventoyStack.h"
 
 void EventHandler::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::InventoryEntryData* a_entry) {
     if (const auto base = a_entry->GetObject()) {
-        if (const auto variant = InventoyStackManager::GetSingleton()->GetInventoryModel(owner, base)) {
-            auto modelSwapManger = ModelSwapManager::GetSingleton();
+        if (const auto variant = InventoyStack::GetSingleton()->GetInventoryModel(owner, base)) {
+            auto modelSwapManger = ModelSwap::GetSingleton();
 
             modelSwapManger->Apply(base, variant);
 
@@ -26,8 +26,8 @@ void EventHandler::SetInventoryBaseModel(RE::TESObjectREFR* owner, RE::Inventory
 }
 
 void EventHandler::ApplyNewWoldStack(RE::TESForm* base, RefID refid) {
-    auto worldStack = WorldStackManager::GetSingleton();
-    auto modelSwap = ModelSwapManager::GetSingleton();
+    auto worldStack = WorldStack::GetSingleton();
+    auto modelSwap = ModelSwap::GetSingleton();
     auto id = modelSwap->Process(base, refid);
     if (id != -1) {
         logger::trace("Found variant");
@@ -44,7 +44,7 @@ void EventHandler::ApplyNewWoldStack(RE::TESForm* base, RefID refid) {
 void EventHandler::ApplyNewNonInventoryItem(RE::TESForm* base, RefID refid) {
     logger::trace("other stuff");
 
-    auto modelSwapManger = ModelSwapManager::GetSingleton();
+    auto modelSwapManger = ModelSwap::GetSingleton();
     auto id = modelSwapManger->Process(base, refid);
     modelSwapManger->Apply(base, id);
 
@@ -60,8 +60,8 @@ void EventHandler::ApplyNewNonInventoryItem(RE::TESForm* base, RefID refid) {
 }
 
 void EventHandler::ApplyNewQueuedItem(RE::TESForm* base, RefID refid, v_variant variant_vector, int ref_count) {
-    auto worldStack = WorldStackManager::GetSingleton();
-    auto modelSwap = ModelSwapManager::GetSingleton();
+    auto worldStack = WorldStack::GetSingleton();
+    auto modelSwap = ModelSwap::GetSingleton();
     auto top_stack = ApplicationUtils::GetTopOfStack(variant_vector, ref_count);
     top_stack = top_stack.empty() ? std::vector<int32_t>(ref_count) : top_stack;
     if (top_stack.back() == -1) {
@@ -104,7 +104,7 @@ void EventHandler::OnNpcLoad(RE::TESObjectREFR* ref) {
                 if (const auto race = npc->race) {
                     if (const auto raceSkin = race->skin) {
                         for (const auto addon : raceSkin->armorAddons) {
-                            const auto manager = ModelSwapManager::GetSingleton();
+                            const auto manager = ModelSwap::GetSingleton();
                             auto id = manager->Process(addon, ref->GetFormID());
                             manager->Apply(obj, id);
                         }
@@ -113,7 +113,7 @@ void EventHandler::OnNpcLoad(RE::TESObjectREFR* ref) {
 
                 if (const auto skin = npc->skin) {
                     for (const auto addon : skin->armorAddons) {
-                        const auto manager = ModelSwapManager::GetSingleton();
+                        const auto manager = ModelSwap::GetSingleton();
                         auto id = manager->Process(addon, ref->GetFormID());
                         manager->Apply(obj, id);
                     }
@@ -137,9 +137,9 @@ void EventHandler::OnGenericLoadEvent(RE::TESObjectREFR* a_ref)
 
 	if (base->IsInventoryObject()) {
         logger::trace("inv object");
-        auto dropQueueManager = DropQueueManager::GetSingleton();
-        auto worldStack = WorldStackManager::GetSingleton();
-        auto modelSwap = ModelSwapManager::GetSingleton();
+        auto dropQueueManager = DropQueue::GetSingleton();
+        auto worldStack = WorldStack::GetSingleton();
+        auto modelSwap = ModelSwap::GetSingleton();
 
         if (auto ref_variant = worldStack->GetByReference(refid); ref_variant.size() > 0) {
             logger::trace("Already applied");
@@ -162,10 +162,10 @@ void EventHandler::OnGenericLoadEvent(RE::TESObjectREFR* a_ref)
 }
 
 void EventHandler::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
-    if (auto variants = InventoyStackManager::GetSingleton()->GetAllInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
-        DropQueueManager::GetSingleton()->Add(a_obj->GetFormID(), variants);
+    if (auto variants = InventoyStack::GetSingleton()->GetAllInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
+        DropQueue::GetSingleton()->Add(a_obj->GetFormID(), variants);
     }
-    InventoyStackManager::GetSingleton()->Remove(a_owner, a_obj, a_count);
+    InventoyStack::GetSingleton()->Remove(a_owner, a_obj, a_count);
 }
 
 void EventHandler::OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item,
@@ -173,20 +173,20 @@ void EventHandler::OnItemDrop(RE::ITEM_REMOVE_REASON a_reason, RE::TESObjectREFR
     if (a_reason == RE::ITEM_REMOVE_REASON::kDropping) {
         OnItemDrop(a_this, a_item, a_count);
     } else {
-        InventoyStackManager::GetSingleton()->Remove(a_this, a_item, a_count);
+        InventoyStack::GetSingleton()->Remove(a_this, a_item, a_count);
     }
 }
 
 void EventHandler::OnItemTransfer(RE::TESObjectREFR* a_this, const RE::TESBoundObject* a_item, const int32_t a_count,
                              RE::TESObjectREFR* a_other) {
-    auto inv_variants = InventoyStackManager::GetSingleton()->GetAllInventoryModels(a_this, a_item, a_count);
-    InventoyStackManager::GetSingleton()->Remove(a_this, a_item, a_count);
-    InventoyStackManager::GetSingleton()->AddMultiple(a_other, a_item, a_count, inv_variants);
+    auto inv_variants = InventoyStack::GetSingleton()->GetAllInventoryModels(a_this, a_item, a_count);
+    InventoyStack::GetSingleton()->Remove(a_this, a_item, a_count);
+    InventoyStack::GetSingleton()->AddMultiple(a_other, a_item, a_count, inv_variants);
 }
 
 void EventHandler::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a_obj, const int32_t a_count) {
-    auto worldStack = WorldStackManager::GetSingleton();
-    auto inventoryManager = InventoyStackManager::GetSingleton();
+    auto worldStack = WorldStack::GetSingleton();
+    auto inventoryManager = InventoyStack::GetSingleton();
 
     inventoryManager->Sync(a_owner);
 
@@ -197,5 +197,5 @@ void EventHandler::OnItemPickup(RE::TESObjectREFR* a_owner, RE::TESObjectREFR* a
 
     inventoryManager->AddMultiple(a_owner, base, a_count, wo_stack);
 
-    WorldStackManager::GetSingleton()->Remove(base->GetFormID(), obj_refid);
+    WorldStack::GetSingleton()->Remove(base->GetFormID(), obj_refid);
 }

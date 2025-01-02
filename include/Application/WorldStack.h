@@ -3,7 +3,7 @@
 #include "Application/Model.h"
 #include "Lib/Singleton.h"
 
-class WorldStackManager : public Singleton<WorldStackManager> {
+class WorldStack : public Singleton<WorldStack> {
     std::shared_mutex applied_variants_mutex_;
     std::map<RefID, v_variant> world_object_stacks;
 

@@ -3,7 +3,7 @@
 #include <shared_mutex>
 #include "Model.h"
 
-class DropQueueManager : public Singleton<DropQueueManager> {
+class DropQueue : public Singleton<DropQueue> {
     std::shared_mutex queue_mutex_;
     std::vector<std::pair<FormID, v_variant>> variants_queue;
 

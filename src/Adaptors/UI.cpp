@@ -1,8 +1,8 @@
 #include "Adaptors/UI.h"
 #include "Lib/SKSEMenuFramework.h"
-#include "Application/InventoyStackManager.h"
-#include "Application/WorldStackManager.h"
-#include "Application/DropQueueManager.h"
+#include "Application/InventoyStack.h"
+#include "Application/WorldStack.h"
+#include "Application/DropQueue.h"
 void UI::Install() {
 
     if (!SKSEMenuFramework::IsInstalled()) {
@@ -18,7 +18,7 @@ void UI::Install() {
 
 void __stdcall UI::InventoryStacks::Render() {
 
-    auto manager = InventoyStackManager::GetSingleton();
+    auto manager = InventoyStack::GetSingleton();
     for (auto &[key, value] : manager->GetAll()) {
         if (value.size() == 0) {
             continue;
@@ -63,7 +63,7 @@ void __stdcall UI::InventoryStacks::Render() {
 }
 
 void __stdcall UI::Queue::Render() {
-    auto dropQueueManager = DropQueueManager::GetSingleton();
+    auto dropQueueManager = DropQueue::GetSingleton();
 
     for (auto [key, value] : dropQueueManager->GetAll()) {
         ImGui::Text(std::format("Form: {:x}", key).c_str());
@@ -75,7 +75,7 @@ void __stdcall UI::Queue::Render() {
 
 
 void __stdcall UI::WorldStacks::Render() {
-    auto manager = WorldStackManager::GetSingleton();
+    auto manager = WorldStack::GetSingleton();
 
     for (auto [key, value] : manager->GetAll()) {
         if (value.size() == 0) {

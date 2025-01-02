@@ -1,8 +1,8 @@
 #include "Adaptors/Serialization.h"
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/binary_iarchive.hpp>
-#include "Application/InventoyStackManager.h"
-#include "Application/WorldStackManager.h"
+#include "Application/InventoyStack.h"
+#include "Application/WorldStack.h"
 namespace Serialization {
     void saveDataBinary(const Data& data, const std::string& filename) {
         std::ofstream ofs(filename + ".bin", std::ios::binary);
@@ -34,7 +34,7 @@ void Serialization::LoadSerializedData(const char* filename) {
     Serialization::loadDataBinary(saved_data, filename);
 
     {
-        auto inventory = InventoyStackManager::GetSingleton();
+        auto inventory = InventoyStack::GetSingleton();
         inventory->ClearData();
         std::unique_lock lock_var(inventory->GetMutex());
 
@@ -48,7 +48,7 @@ void Serialization::LoadSerializedData(const char* filename) {
     }
 
     {
-        auto worldStack = WorldStackManager::GetSingleton();
+        auto worldStack = WorldStack::GetSingleton();
         worldStack->CleanData();
         std::unique_lock lock_inv(worldStack->GetMutex());
         for (const auto& [owner_refid, model_indices] : saved_data.worldobject) {
@@ -63,8 +63,8 @@ void Serialization::LoadSerializedData(const char* filename) {
 void Serialization::SerializeData(const char* filename) {
     const auto file_path = Serialization::serialization_path + filename;
 
-    auto worldStack = WorldStackManager::GetSingleton();
-    auto inventory = InventoyStackManager::GetSingleton();
+    auto worldStack = WorldStack::GetSingleton();
+    auto inventory = InventoyStack::GetSingleton();
 
     std::shared_lock lock_inv(inventory->GetMutex());
     std::shared_lock lock_var(worldStack->GetMutex());

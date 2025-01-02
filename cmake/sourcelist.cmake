@@ -3,11 +3,11 @@ set(SOURCE_FILES
 
 	src/Application/EventHandler.cpp
 	src/Application/AVObjects.cpp
-	src/Application/InventoyStackManager.cpp
-	src/Application/ModelSwapManager.cpp
-	src/Application/WorldStackManager.cpp
+	src/Application/InventoyStack.cpp
+	src/Application/ModelSwap.cpp
+	src/Application/WorldStack.cpp
 	src/Application/ApplicationUtils.cpp
-	src/Application/DropQueueManager.cpp
+	src/Application/DropQueue.cpp
 	
 	src/Adaptors/Hooks.cpp
 	src/Adaptors/Persistence.cpp

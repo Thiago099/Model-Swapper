@@ -1,5 +1,5 @@
 #pragma once
-#include "Application/InventoyStackManager.h"
+#include "Application/InventoyStack.h"
 #include "Lib/SaveLoadManager.h"
 #include "Application/EventHandler.h"
 

@@ -1,14 +1,14 @@
-#include "Application/InventoyStackManager.h"
+#include "Application/InventoyStack.h"
 #include "Application/ApplicationUtils.h"
-#include "Application/ModelSwapManager.h"
+#include "Application/ModelSwap.h"
 
-void InventoyStackManager::ClearData() {
+void InventoyStack::ClearData() {
     std::unique_lock lock_inv(inventory_stacks_mutex_);
 
     inventory_stacks.clear();
 }
 
-void InventoyStackManager::Sync(RE::TESObjectREFR* inventory_owner) {
+void InventoyStack::Sync(RE::TESObjectREFR* inventory_owner) {
     std::map<FormID, int32_t> actual_inventory;
     const auto inv = inventory_owner->GetInventory();
     for (const auto& [bound, entry] : inv) {
@@ -39,23 +39,23 @@ void InventoyStackManager::Sync(RE::TESObjectREFR* inventory_owner) {
     }
 }
 
-void InventoyStackManager::Remove(const RefID owner_id, const FormID item_id) {
+void InventoyStack::Remove(const RefID owner_id, const FormID item_id) {
     if (!inventory_stacks[owner_id][item_id].empty()) {
         inventory_stacks[owner_id][item_id].pop_back();
     }
 }
 
-std::map<RefID, inventory_stack> InventoyStackManager::GetAll() { return inventory_stacks; }
+std::map<RefID, inventory_stack> InventoyStack::GetAll() { return inventory_stacks; }
 
-std::shared_mutex& InventoyStackManager::GetMutex() { return inventory_stacks_mutex_; }
+std::shared_mutex& InventoyStack::GetMutex() { return inventory_stacks_mutex_; }
 
-void InventoyStackManager::Add(RefID owner, RefID item, int a_variant) {
+void InventoyStack::Add(RefID owner, RefID item, int a_variant) {
     if (a_variant != -1) {
         inventory_stacks[owner][item].push_back(a_variant);
     }
 }
 
-void InventoyStackManager::AddMultiple(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count,
+void InventoyStack::AddMultiple(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count,
                                v_variant& add_vector) {
     std::unique_lock lock(inventory_stacks_mutex_);
     for (int i = 0; i < add_vector.size(); ++i) {
@@ -64,7 +64,7 @@ void InventoyStackManager::AddMultiple(RE::TESObjectREFR* a_owner, const RE::TES
     }
 }
 
-void InventoyStackManager::Remove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
+void InventoyStack::Remove(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
     Sync(a_owner);
     std::unique_lock lock(inventory_stacks_mutex_);
     for (int i = 0; i < a_count; ++i) {
@@ -72,7 +72,7 @@ void InventoyStackManager::Remove(RE::TESObjectREFR* a_owner, const RE::TESBound
     }
 }
 
-const int32_t InventoyStackManager::GetInventoryModel(const RE::TESObjectREFR* a_owner,
+const int32_t InventoyStack::GetInventoryModel(const RE::TESObjectREFR* a_owner,
                                                       const RE::TESBoundObject* a_item) {
     std::shared_lock lock(inventory_stacks_mutex_);
     if (const auto it = inventory_stacks.find(a_owner->GetFormID()); it != inventory_stacks.end()) {
@@ -85,7 +85,7 @@ const int32_t InventoyStackManager::GetInventoryModel(const RE::TESObjectREFR* a
     return -1;
 }
 
-std::vector<int32_t> InventoyStackManager::GetAllInventoryModels(const RE::TESObjectREFR* a_owner,
+std::vector<int32_t> InventoyStack::GetAllInventoryModels(const RE::TESObjectREFR* a_owner,
                                                                  const RE::TESBoundObject* a_item,
                                                                  const int32_t a_count) {
     std::shared_lock lock(inventory_stacks_mutex_);

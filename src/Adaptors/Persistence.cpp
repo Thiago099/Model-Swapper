@@ -1,5 +1,5 @@
 #include "Adaptors/Persistence.h"
-#include "Application/ModelSwapManager.h"
+#include "Application/ModelSwap.h"
 
 #include "Application/Config.h"
 #include "Lib/Ini.h"
@@ -47,7 +47,7 @@ void Persistence::Install() {
     config->NowOverride.log("now override");
 
     EachConfigFile([](std::string filename, const json& data) {
-        auto manager = ModelSwapManager::GetSingleton();
+        auto manager = ModelSwap::GetSingleton();
         if (data.is_array()) {
             auto i = 0;
             for (auto item : data) {

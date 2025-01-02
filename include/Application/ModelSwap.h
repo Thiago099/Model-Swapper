@@ -3,7 +3,7 @@
 #include "Application/Model.h"
 #include "Lib/Singleton.h"
 
-class ModelSwapManager : public Singleton<ModelSwapManager> {
+class ModelSwap : public Singleton<ModelSwap> {
     models sources;
 
 

@@ -5,7 +5,7 @@
 #include "Lib/Singleton.h"
 #include "Application/Model.h"
 
-class InventoyStackManager : public Singleton<InventoyStackManager> {
+class InventoyStack : public Singleton<InventoyStack> {
 	std::shared_mutex inventory_stacks_mutex_;
 
     std::map<RefID, inventory_stack> inventory_stacks;
