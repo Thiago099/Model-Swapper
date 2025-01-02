@@ -65,7 +65,7 @@ void __stdcall UI::InventoryStacks::Render() {
 void __stdcall UI::Queue::Render() {
     auto dropQueueManager = DropQueueManager::GetSingleton();
 
-    for (auto [key, value] : dropQueueManager->GetQueue()) {
+    for (auto [key, value] : dropQueueManager->GetAll()) {
         ImGui::Text(std::format("Form: {:x}", key).c_str());
         for (auto item : value) {
             ImGui::Text(std::format("    Form: {}", item).c_str());

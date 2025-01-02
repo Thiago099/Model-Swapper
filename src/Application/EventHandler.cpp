@@ -145,7 +145,7 @@ void EventHandler::OnGenericLoadEvent(RE::TESObjectREFR* a_ref)
             logger::trace("Already applied");
             modelSwap->Apply(base, ref_variant.back());
         } 
-        if (auto variant_vector = dropQueueManager->GetNextItemFromDropQueue(base->GetFormID()); !variant_vector.empty()) {
+        if (auto variant_vector = dropQueueManager->Get(base->GetFormID()); !variant_vector.empty()) {
             logger::trace("Queued");
             ApplyNewQueuedItem(base, refid, variant_vector, ref_count);
         }
@@ -163,7 +163,7 @@ void EventHandler::OnGenericLoadEvent(RE::TESObjectREFR* a_ref)
 
 void EventHandler::OnItemDrop(RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_obj, const int32_t a_count) {
     if (auto variants = InventoyStackManager::GetSingleton()->GetAllInventoryModels(a_owner, a_obj, a_count); !variants.empty()) {
-        DropQueueManager::GetSingleton()->AddToDropQueue(a_obj->GetFormID(), variants);
+        DropQueueManager::GetSingleton()->Add(a_obj->GetFormID(), variants);
     }
     InventoyStackManager::GetSingleton()->Remove(a_owner, a_obj, a_count);
 }

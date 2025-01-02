@@ -10,9 +10,9 @@ class DropQueueManager : public Singleton<DropQueueManager> {
 public:
     void ClearData();
 
-    void AddToDropQueue(FormID formid, v_variant& variant_vector);
+    void Add(FormID formid, v_variant& variant_vector);
 
-    v_variant GetNextItemFromDropQueue(const FormID formId);
+    v_variant Get(const FormID formId);
 
-    std::vector<std::pair<FormID, v_variant>> GetQueue();
+    std::vector<std::pair<FormID, v_variant>> GetAll();
 };

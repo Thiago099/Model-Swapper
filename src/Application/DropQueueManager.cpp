@@ -5,13 +5,13 @@ void DropQueueManager::ClearData() {
     variants_queue.clear();
 }
 
-void DropQueueManager::AddToDropQueue(FormID formid, v_variant& variant_vector) {
+void DropQueueManager::Add(FormID formid, v_variant& variant_vector) {
     std::unique_lock lock(queue_mutex_);
     const auto pair = std::make_pair(formid, variant_vector);
     variants_queue.push_back(pair);
 }
 
-v_variant DropQueueManager::GetNextItemFromDropQueue(const FormID formId) {
+v_variant DropQueueManager::Get(const FormID formId) {
     std::unique_lock lock(queue_mutex_);
 
     if (variants_queue.empty()) {
@@ -27,4 +27,4 @@ v_variant DropQueueManager::GetNextItemFromDropQueue(const FormID formId) {
     return {};
 }
 
-std::vector<std::pair<FormID, v_variant>> DropQueueManager::GetQueue() { return variants_queue; }
+std::vector<std::pair<FormID, v_variant>> DropQueueManager::GetAll() { return variants_queue; }
