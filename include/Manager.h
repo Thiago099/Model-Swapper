@@ -44,8 +44,8 @@ public:
     void SaveGame(const char* save_name);
 
     void Register(std::string key, variants value);
-    void Process(RE::TESBoundObject* base, RefID id);
-    void Process(RE::TESObjectARMA* base, RE::FormID id) const;
+    void Process(RE::TESObjectREFR* refr, RE::TESBoundObject* base, RefID id);
+    void Process(RE::TESObjectREFR* refr, RE::TESObjectARMA* base, RE::FormID id) const;
 
     const variant* GetInventoryModel(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item);
     v_variant GetInventoryModels(const RE::TESObjectREFR* a_owner, const RE::TESBoundObject* a_item, int32_t a_count);

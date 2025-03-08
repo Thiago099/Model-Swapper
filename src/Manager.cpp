@@ -245,8 +245,9 @@ void Manager::Register(std::string key, variants value) {
     }
 }
 
-void Manager::Process(RE::TESBoundObject* base, const RefID id) {
-    const auto wrapper = new AVModel(base);
+void Manager::Process(RE::TESObjectREFR* refr, RE::TESBoundObject* base,
+                      const RefID id) {
+    const auto wrapper = new AVModel(base, refr);
     if (const auto variant = Process(wrapper, id)) {
 	    std::unique_lock lock(applied_variants_mutex_);
         applied_variants[id] = variant;
@@ -254,8 +255,9 @@ void Manager::Process(RE::TESBoundObject* base, const RefID id) {
     delete wrapper;
 }
 
-void Manager::Process(RE::TESObjectARMA* base, const RE::FormID id) const {
-    const auto wrapper = new AVObjectARMA(base);
+void Manager::Process(RE::TESObjectREFR* refr, RE::TESObjectARMA* base,
+                      const RE::FormID id) const {
+    const auto wrapper = new AVObjectARMA(base, refr);
     Process(wrapper, id);
     delete wrapper;
 }
@@ -386,10 +388,13 @@ const variant* Manager::GetAppliedVariant(const RefID id)
 
 void Manager::ApplyVariant(RE::TESBoundObject* base, const RefID id, const variant* a_variant)
 {
-	if (const auto bm = base->As<RE::TESModel>()) {
-        bm->SetModel(a_variant->model);
-        std::unique_lock lock(applied_variants_mutex_);
-        applied_variants[id] = a_variant;
+    if (a_variant) { //TODO: See why variant is null
+    
+		if (const auto bm = base->As<RE::TESModel>()) {
+			bm->SetModel(a_variant->model);
+			std::unique_lock lock(applied_variants_mutex_);
+			applied_variants[id] = a_variant;
+		}
 	}
 }
 
@@ -458,7 +463,7 @@ void Manager::ProcessReference(RE::TESObjectREFR* a_ref)
 		worldobject_stacks[refid] = top_stack;
     }
     else {
-        Process(base, refid);
+        Process(a_ref, base, refid);
 		// also update worldobject_stacks
         if (const auto applied_variant = GetAppliedVariant(refid)) {
 			worldobject_stacks[refid] = std::vector(ref_count, applied_variant);

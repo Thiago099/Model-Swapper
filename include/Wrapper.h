@@ -2,32 +2,35 @@
 #include "Str.h"
 #include "TimeClass.h"
 #include "Config.h"
+
+struct condition {
+    int extraHealth;
+    bool noConditions;
+    int variant;
+};
+
 struct variant {
     const char* model;
     const char* key;
     Time startDate;
     Time endDate;
+    std::vector<condition*> conditions;
 };
 
 using variants = std::vector<variant*>;
 using models = std::map<std::string, variants>;
 
 class AVObject {
-public:
-    virtual ~AVObject() = default;
-    virtual void Reset() = 0;
-    virtual const variant* Match(const models& models, int variant) = 0;
-    virtual RE::TESForm* GetBase() = 0;
-};
-
-inline variant* find(const models& models, const char* str, const uint32_t seed) {
+    RE::TESObjectREFR* refr = nullptr;
+protected:
+    inline variant* find(const models& models, const char* str, const uint32_t seed) {
     const auto key = Str::processString(str);
     if (const auto it = models.find(key); it != models.end()) {
         std::mt19937 engine(seed);
         std::uniform_int_distribution<uint32_t> dist(0, it->second.size() - 1);
         if (const uint32_t random_number = dist(engine); random_number < it->second.size()) {
 
-            const auto result = it->second.at(random_number);
+            auto result = it->second.at(random_number);
             const auto config = Config::GetSingleton();
 
             if (config->BypassTemporalActivation) {
@@ -43,6 +46,31 @@ inline variant* find(const models& models, const char* str, const uint32_t seed)
             result->endDate.log("end");
 
             #endif  // !NDEBUG
+
+
+            for (auto cnd : result->conditions) {
+                if (cnd->noConditions) {
+                    result = it->second.at(cnd->variant);
+                }
+                if (cnd->extraHealth != -1) {
+                    if (refr) {
+                        if (auto health = refr->extraList.GetByType<RE::ExtraHealth>()) {
+                            if (health->health != cnd->extraHealth) {
+                                logger::trace("ref {} health is different {}", refr->GetName(), health->health);
+                            } else {
+                                logger::trace("ref {} health is equal", refr->GetName());
+                                result = it->second.at(cnd->variant);
+                            }
+                        } else {
+                            logger::trace("ref {} does not has extra health", refr->GetName());
+                        }
+                    } else {
+                        logger::trace("no refr");
+                    }
+                }
+            }
+
+
  
             if (!result->startDate.exists || !now.exists || !result->endDate.exists) {
                 logger::trace("date is fault, fallback yes");
@@ -53,6 +81,8 @@ inline variant* find(const models& models, const char* str, const uint32_t seed)
                 return result;
             }
 
+
+
             logger::trace("not in between doing nothing");
             
             return nullptr;
@@ -60,6 +90,16 @@ inline variant* find(const models& models, const char* str, const uint32_t seed)
     }
     return nullptr;
 }
+public:
+    AVObject(RE::TESObjectREFR* refr): refr(refr) {
+    }
+    virtual ~AVObject() = default;
+    virtual void Reset() = 0;
+    virtual const variant* Match(const models& models, int variant) = 0;
+    virtual RE::TESForm* GetBase() = 0;
+};
+
+
 
 class AVObjectARMA final : public AVObject {
     const char* initialMaleThirdPersonModle = nullptr;
@@ -68,11 +108,16 @@ class AVObjectARMA final : public AVObject {
     const char* initialFemaleFirstPersonModel = nullptr;
     RE::TESObjectARMA* base = nullptr;
 
+
 public:
     ~AVObjectARMA() override {
     }
 
-    explicit AVObjectARMA(RE::TESObjectARMA* base) : base(base) {
+    explicit AVObjectARMA(RE::TESObjectARMA* base, RE::TESObjectREFR* refr)
+        :
+        AVObject(refr),
+        base(base) 
+    {
         if (!base) {
             return;    
         }
@@ -153,7 +198,10 @@ public:
     ~AVModel() override {
     }
 
-    explicit AVModel(RE::TESForm* base) : base(base) {
+    explicit AVModel(RE::TESForm* base, RE::TESObjectREFR* refr) : 
+        AVObject(refr),
+        base(base) 
+    {
         if (!base) {
             return;
         }

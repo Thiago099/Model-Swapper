@@ -82,6 +82,34 @@ void Persistence::Install() {
                     endDate = pair.second;
                 }
 
+
+                std::vector<condition*> conditionsResult;
+
+                if (item.contains("Conditions")) {
+                    auto conditions = item["Conditions"];
+
+                    if (conditions.is_array()) {
+
+                        for (auto cond : conditions){
+                            int extraHealth = -1;
+                            bool noConditions = true;
+                            if (cond.contains("ExtraHealth")) {
+                                extraHealth = cond["ExtraHealth"].get<int>();
+                                noConditions = false;
+                            }
+                            if (cond.contains("Variant")) {
+                                auto cc = new condition();
+                                cc->extraHealth = extraHealth;
+                                cc->noConditions = noConditions;
+                                cc->variant = cond["Variant"].get<int>();
+                                logger::trace("Condition registered extra health {} variant {}", cc->extraHealth, cc->variant);
+                                conditionsResult.push_back(cc);
+                            }
+                        }
+                    }
+
+                }
+
                 auto j = 0;
 
                 for (const auto& v : variants) {
@@ -96,6 +124,7 @@ void Persistence::Install() {
                     current->endDate = endDate;
                     current->model = modelPath;
                     current->key = key;
+                    current->conditions = conditionsResult;
                     models.push_back(current);
 
                     ++j;
