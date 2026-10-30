@@ -1,0 +1,30 @@
+[
+  {
+    "OriginalModel": "Example\\LegacyOriginal.nif",
+    "Variants": [
+      "Example\\LegacyVariant.nif"
+    ]
+  },
+  {
+    "OriginalModel": "Example\\BaseOriginal.nif",
+    "Variants": [
+      "Example\\BaseOnlyVariant.nif"
+    ],
+    "BaseFormID": "Example.esp|001234"
+  },
+  {
+    "OriginalModel": "Example\\ReferenceOriginal.nif",
+    "Variants": [
+      "Example\\ReferenceOnlyVariant.nif"
+    ],
+    "ReferenceID": "Example.esp|005678"
+  },
+  {
+    "OriginalModel": "Example\\CombinedOriginal.nif",
+    "Variants": [
+      "Example\\CombinedVariant.nif"
+    ],
+    "BaseFormID": "Example.esp|001234",
+    "ReferenceID": "Example.esp|005678"
+  }
+]

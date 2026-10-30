@@ -2,11 +2,14 @@
 #include "Str.h"
 #include "TimeClass.h"
 #include "Config.h"
+#include "FormFilter.h"
+#include <memory>
 struct variant {
     const char* model;
     const char* key;
     Time startDate;
     Time endDate;
+    FormFilter filter;
 };
 
 using variants = std::vector<variant*>;
@@ -14,21 +17,35 @@ using models = std::map<std::string, variants>;
 
 class AVObject {
 public:
+    virtual ~AVObject() = default;
     virtual void Reset() = 0;
-    virtual void Match(models models, int variant) = 0;
+    virtual std::unique_ptr<AVObject> Snapshot() = 0;
+    virtual void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
 
-inline variant* find(models& models, const char* str, uint32_t seed) {
+inline variant* find(const models& models, const char* str, uint32_t seed, RE::FormID baseFormID = 0) {
+    if (!str) {
+        return nullptr;
+    }
     auto key = Str::processString(str);
     auto it = models.find(key);
     if (it != models.end()) {
+        variants eligible;
+        for (auto item : it->second) {
+            if (item->filter.Matches(baseFormID, seed)) {
+                eligible.push_back(item);
+            }
+        }
+        if (eligible.empty()) {
+            return nullptr;
+        }
         std::mt19937 engine(seed);
-        std::uniform_int_distribution<uint32_t> dist(0, it->second.size() - 1);
+        std::uniform_int_distribution<uint32_t> dist(0, static_cast<uint32_t>(eligible.size() - 1));
         uint32_t random_number = dist(engine);
-        if (random_number < it->second.size()) {
+        if (random_number < eligible.size()) {
 
-            auto result = it->second.at(random_number);
+            auto result = eligible.at(random_number);
             auto config = Config::GetSingleton();
 
             if (config->BypassTemporalActivation) {
@@ -63,10 +80,14 @@ inline variant* find(models& models, const char* str, uint32_t seed) {
 }
 
 class AVObjectARMA : public AVObject {
-    const char* initialMaleThirdPersonModle = nullptr;
-    const char* initialFemaleThirdPersonModle = nullptr;
-    const char* initialMaleFirstPersonModle = nullptr;
-    const char* initialFemaleFirstPersonModel = nullptr;
+    RE::BSFixedString initialMaleThirdPersonModle;
+    RE::BSFixedString initialFemaleThirdPersonModle;
+    RE::BSFixedString initialMaleFirstPersonModle;
+    RE::BSFixedString initialFemaleFirstPersonModel;
+    bool changedMaleThirdPerson = false;
+    bool changedFemaleThirdPerson = false;
+    bool changedMaleFirstPerson = false;
+    bool changedFemaleFirstPerson = false;
     RE::TESObjectARMA* base = nullptr;
 
 public:
@@ -92,16 +113,32 @@ public:
             return;
         }
         if (base->bipedModels) {
-            base->bipedModels[RE::SEXES::kMale].SetModel(initialMaleThirdPersonModle);
-            base->bipedModels[RE::SEXES::kFemale].SetModel(initialFemaleThirdPersonModle);
+            if (changedMaleThirdPerson) {
+                base->bipedModels[RE::SEXES::kMale].SetModel(initialMaleThirdPersonModle.c_str());
+            }
+            if (changedFemaleThirdPerson) {
+                base->bipedModels[RE::SEXES::kFemale].SetModel(initialFemaleThirdPersonModle.c_str());
+            }
         }
         if (base->bipedModel1stPersons) {
-            base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(initialMaleFirstPersonModle);
-            base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(initialFemaleFirstPersonModel);
+            if (changedMaleFirstPerson) {
+                base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(initialMaleFirstPersonModle.c_str());
+            }
+            if (changedFemaleFirstPerson) {
+                base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(initialFemaleFirstPersonModel.c_str());
+            }
         }
     }
     RE::TESForm* GetBase() override {
         return base;
+    }
+    std::unique_ptr<AVObject> Snapshot() override {
+        auto snapshot = std::make_unique<AVObjectARMA>(base);
+        snapshot->changedMaleThirdPerson = changedMaleThirdPerson;
+        snapshot->changedFemaleThirdPerson = changedFemaleThirdPerson;
+        snapshot->changedMaleFirstPerson = changedMaleFirstPerson;
+        snapshot->changedFemaleFirstPerson = changedFemaleFirstPerson;
+        return snapshot;
     }
     int64_t RequestModel2(const char* src) {
         int64_t a2 = 0;
@@ -111,26 +148,30 @@ public:
         return func(src, &a2, &a3);
     }
 
-    void Match(models models, int variant) override {
+    void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID) override {
         if (!base) {
             return;
         }
 
         if (base->bipedModels) {
-            if (auto item = find(models, initialMaleThirdPersonModle, variant)) {
+            if (auto item = find(models, initialMaleThirdPersonModle.c_str(), referenceID, baseFormID)) {
                 base->bipedModels[RE::SEXES::kMale].SetModel(item->model);
+                changedMaleThirdPerson = true;
             }
-            if (auto item = find(models, initialFemaleThirdPersonModle, variant)) {
+            if (auto item = find(models, initialFemaleThirdPersonModle.c_str(), referenceID, baseFormID)) {
                 base->bipedModels[RE::SEXES::kFemale].SetModel(item->model);
+                changedFemaleThirdPerson = true;
             }
         }
         if (base->bipedModel1stPersons) {
 
-            if (auto item = find(models, initialMaleFirstPersonModle, variant)) {
+            if (auto item = find(models, initialMaleFirstPersonModle.c_str(), referenceID, baseFormID)) {
                 base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(item->model);
+                changedMaleFirstPerson = true;
             }
-            if (auto item = find(models, initialFemaleFirstPersonModel, variant)) {
+            if (auto item = find(models, initialFemaleFirstPersonModel.c_str(), referenceID, baseFormID)) {
                 base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(item->model);
+                changedFemaleFirstPerson = true;
             }
         }
     }
@@ -138,7 +179,8 @@ public:
 
 
 class AVModel: public AVObject {
-    const char* model = nullptr;
+    RE::BSFixedString model;
+    bool changed = false;
     RE::TESForm* base = nullptr;
 public:
     ~AVModel() {
@@ -153,20 +195,29 @@ public:
     }
 
     RE::TESForm* GetBase() override { return base; }
+    std::unique_ptr<AVObject> Snapshot() override {
+        auto snapshot = std::make_unique<AVModel>(base);
+        snapshot->changed = changed;
+        return snapshot;
+    }
 
     void Reset() override {
-        if (!base) {
+        if (!base || !changed) {
             return;
+        }
+        if (auto bm = base->As<RE::TESModel>()) {
+            bm->SetModel(model.c_str());
         }
     }
 
-    void Match(models models, int variant) override {
+    void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID) override {
         if (!base) {
             return;
         }
         if (auto bm = base->As<RE::TESModel>()) {
-            if (auto item = find(models, model, variant)) {
+            if (auto item = find(models, model.c_str(), referenceID, baseFormID)) {
                 bm->SetModel(item->model);
+                changed = true;
             }
 
         }

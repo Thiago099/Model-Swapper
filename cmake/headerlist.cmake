@@ -7,5 +7,6 @@ set(HEADER_FILES
 	include/Manager.h
 	include/Str.h
 	include/Wrapper.h
+	include/FormFilter.h
 	include/TimeClass.h
 )

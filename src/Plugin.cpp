@@ -2,6 +2,8 @@
 
 void OnMessage(SKSE::MessagingInterface::Message* message) {
     if (message->type == SKSE::MessagingInterface::kDataLoaded) {
+        // Plugin-relative IDs can only be resolved once the load order is available.
+        Persistence::Install();
     }
     if (message->type == SKSE::MessagingInterface::kPostLoadGame) {
         //auto form = RE::TESForm::LookupByID<RE::TESObjectMISC>(0x5ACE4);
@@ -25,6 +27,5 @@ SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     logger::info("Plugin loaded");
     Hooks::Install();
     HookBuilder::GetSingleton()->Install();
-    Persistence::Install();
     return true;
 }
