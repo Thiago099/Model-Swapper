@@ -1,17 +1,31 @@
 # ---------------------------------------------------- #
 #                  CommonLibSSE-NG source              #
 # ---------------------------------------------------- #
-# Prefer the COMMONLIB_SSE_FOLDER env var (a shared local clone) when set; else
-# fall back to the vendored submodule so the build is self-contained (CI, fresh
-# contributors) with a pinned, static dependency.
+# Prefer a shared clone only when it includes Skyrim 1.7 support. Older clones
+# classify 1.7 as SE and select the wrong address-library IDs.
 
 if(DEFINED ENV{COMMONLIB_SSE_FOLDER} AND NOT "$ENV{COMMONLIB_SSE_FOLDER}" STREQUAL "")
   set(COMMONLIBSSE_DIR "$ENV{COMMONLIB_SSE_FOLDER}")
+  set(COMMONLIBSSE_VERSION_HEADER "${COMMONLIBSSE_DIR}/include/SKSE/Version.h")
+  set(COMMONLIBSSE_HAS_17_SUPPORT "")
+  if(EXISTS "${COMMONLIBSSE_VERSION_HEADER}")
+    file(STRINGS "${COMMONLIBSSE_VERSION_HEADER}" COMMONLIBSSE_HAS_17_SUPPORT
+      REGEX "RUNTIME_SSE_1_7_104")
+  endif()
+  if(NOT COMMONLIBSSE_HAS_17_SUPPORT)
+    message(STATUS "COMMONLIB_SSE_FOLDER lacks Skyrim 1.7.104 support; using bundled CommonLibSSE-NG")
+    set(COMMONLIBSSE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/CommonLibSSE-NG")
+  endif()
 else()
   set(COMMONLIBSSE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern/CommonLibSSE-NG")
 endif()
 if(NOT EXISTS "${COMMONLIBSSE_DIR}/CMakeLists.txt")
-  message(FATAL_ERROR "CommonLibSSE-NG not found at '${COMMONLIBSSE_DIR}'. Set COMMONLIB_SSE_FOLDER or run: git submodule update --init --recursive")
+  message(FATAL_ERROR "CommonLibSSE-NG not found at '${COMMONLIBSSE_DIR}'. Set COMMONLIB_SSE_FOLDER to a Skyrim 1.7.104-capable clone or run: git submodule update --init --recursive")
+endif()
+file(STRINGS "${COMMONLIBSSE_DIR}/include/SKSE/Version.h" COMMONLIBSSE_HAS_17_SUPPORT
+  REGEX "RUNTIME_SSE_1_7_104")
+if(NOT COMMONLIBSSE_HAS_17_SUPPORT)
+  message(FATAL_ERROR "CommonLibSSE-NG at '${COMMONLIBSSE_DIR}' must be updated for Skyrim 1.7.104 support")
 endif()
 
 # This makes norton happy again
