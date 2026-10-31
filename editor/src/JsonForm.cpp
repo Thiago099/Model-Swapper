@@ -23,10 +23,10 @@
 #include <vector>
 
 namespace {
-enum class Hint { Generic, Model, ID, Time };
+enum class Hint { Generic, Text, Model, ID, Time };
 
 const QStringList knownFields = {
-    "OriginalModel", "Variants", "BaseFormID", "ReferenceID",
+    "Title", "OriginalModel", "Variants", "BaseFormID", "ReferenceID",
     "ExcludeBaseFormID", "ExcludeReferenceID",
     "ActiveTimeSpan",
     "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID",
@@ -34,6 +34,7 @@ const QStringList knownFields = {
 };
 
 Hint hintFor(const QString& key) {
+    if (key == "Title") return Hint::Text;
     if (key == "OriginalModel" || key == "Variants") return Hint::Model;
     if (key.endsWith("FormID") || (knownFields.contains(key) && key.endsWith("ID"))) return Hint::ID;
     if (key == "ActiveTimeSpan") return Hint::Time;
@@ -41,7 +42,7 @@ Hint hintFor(const QString& key) {
 }
 
 int tabFor(const QString& key) {
-    if (key == "Variants") return 0;
+    if (key == "Title" || key == "Variants") return 0;
     if (key == "OriginalModel" || key == "BaseFormID" || key == "ReferenceID") return 1;
     if (key.startsWith("Exclude")) return 3;
     return 2;
@@ -225,6 +226,10 @@ private:
                 const auto serialized = QJsonDocument(QJsonArray{initial_}).toJson(QJsonDocument::Compact);
                 text_->setText(QString::fromUtf8(serialized.mid(1, serialized.size() - 2)));
             } else text_->setText(initial_.toString());
+            if (hint_ == Hint::Text) {
+                text_->setAccessibleName("Title");
+                text_->setPlaceholderText("Name this swap");
+            }
             if (hint_ == Hint::Model) text_->setPlaceholderText("Folder\\Model.nif");
             if (hint_ == Hint::Time) {
                 text_->setPlaceholderText("dd-MM~dd-MM");
@@ -254,7 +259,7 @@ private:
             tabs_->setObjectName("entryTabs");
             tabs_->setDocumentMode(true);
             tabs_->setUsesScrollButtons(true);
-            const QStringList tabNames{"Models", "Targets", "Conditions", "Exclusions"};
+            const QStringList tabNames{"Basics", "Targets", "Inclusions", "Exclusions"};
             for (const auto& name : tabNames) {
                 auto* page = new QWidget(tabs_);
                 auto* pageLayout = new QVBoxLayout(page);
@@ -357,7 +362,7 @@ private:
                            !form->value().isDouble() && !form->value().isArray()) ||
                           ((key == "OriginalModel" || key == "Variants") &&
                            !form->value().isString() && !form->value().isArray()) ||
-                          (key == "ActiveTimeSpan" && !form->value().isString()))) {
+                          ((key == "Title" || key == "ActiveTimeSpan") && !form->value().isString()))) {
                 auto* reset = new QPushButton("Reset field", group);
                 reset->setVisible(present);
                 title->addWidget(reset);

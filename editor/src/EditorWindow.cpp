@@ -6,7 +6,6 @@
 #include <QAction>
 #include <QCloseEvent>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -39,7 +38,8 @@ namespace {
     }
 
     QJsonObject blankEntry() {
-        return {{QStringLiteral("OriginalModel"), QString()},
+        return {{QStringLiteral("Title"), QString()},
+                {QStringLiteral("OriginalModel"), QString()},
                 {QStringLiteral("Variants"), QJsonArray{QString()}}};
     }
 
@@ -50,6 +50,12 @@ namespace {
             path.chop(5);
         }
         return path + QStringLiteral("_MS.json");
+    }
+
+    bool validConfigurationName(const QString& name) {
+        static const QRegularExpression invalidName(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
+        return !name.isEmpty() && name != QStringLiteral(".") && name != QStringLiteral("..") &&
+               !invalidName.match(name).hasMatch();
     }
 
     QToolBar* actionBar(QWidget* parent, const QString& name) {
@@ -101,13 +107,13 @@ void EditorWindow::buildUi() {
     saveAction_->setShortcut(QKeySequence::Save);
     connect(saveAction_, &QAction::triggered, this, [this] { saveFile(); });
     fileMenu->addSeparator();
-    auto* directoryAction = fileMenu->addAction(tr("Choose &Data folder…"));
-    directoryAction->setObjectName(QStringLiteral("chooseDataDirectory"));
-    connect(directoryAction, &QAction::triggered, this, &EditorWindow::chooseDirectory);
     auto* rescanAction = fileMenu->addAction(tr("&Rescan files"));
     rescanAction->setObjectName(QStringLiteral("rescanConfigurations"));
     rescanAction->setShortcut(QKeySequence::Refresh);
     connect(rescanAction, &QAction::triggered, this, &EditorWindow::scanFiles);
+    deleteAction_ = fileMenu->addAction(tr("&Delete configuration…"));
+    deleteAction_->setObjectName(QStringLiteral("deleteConfiguration"));
+    connect(deleteAction_, &QAction::triggered, this, &EditorWindow::deleteFile);
     fileMenu->addSeparator();
     auto* quitAction = fileMenu->addAction(tr("&Quit"));
     quitAction->setShortcut(QKeySequence::Quit);
@@ -141,7 +147,7 @@ void EditorWindow::buildUi() {
     addPanelAction(fileActions, newAction, tr("New"), QStyle::SP_FileIcon);
     addPanelAction(fileActions, renameAction_, tr("Rename"), QStyle::SP_FileDialogInfoView);
     addPanelAction(fileActions, rescanAction, tr("Rescan"), QStyle::SP_BrowserReload);
-    addPanelAction(fileActions, directoryAction, tr("Folder…"), QStyle::SP_DirOpenIcon);
+    addPanelAction(fileActions, deleteAction_, tr("Delete"), QStyle::SP_TrashIcon);
     fileLayout->addWidget(fileActions);
     search_ = new QLineEdit(filePanel);
     search_->setPlaceholderText(tr("Filter files…"));
@@ -151,6 +157,7 @@ void EditorWindow::buildUi() {
     files_->setObjectName(QStringLiteral("configurationFiles"));
     files_->setContextMenuPolicy(Qt::ActionsContextMenu);
     files_->addAction(renameAction_);
+    files_->addAction(deleteAction_);
     fileLayout->addWidget(files_);
     auto* discoveryHelp = new QLabel(tr("Finds all *_MS.json files below this folder.\n"
                                        "The plugin loads configurations in Data itself."), filePanel);
@@ -285,20 +292,6 @@ void EditorWindow::scanFiles() {
     updateState();
 }
 
-void EditorWindow::chooseDirectory() {
-    const auto directory = QFileDialog::getExistingDirectory(this, tr("Choose Skyrim Data folder"), dataDirectory_);
-    if (directory.isEmpty() || !confirmUnsavedChanges()) {
-        return;
-    }
-    clearDocument();
-    dataDirectory_ = QDir(directory).absolutePath();
-    discoveredFiles_.clear();
-    sourceDirectories_.clear();
-    plugins_.clear();
-    populateFiles();
-    scanFiles();
-}
-
 void EditorWindow::populateFiles() {
     const QSignalBlocker blocker(files_);
     files_->clear();
@@ -387,15 +380,25 @@ bool EditorWindow::openFile(const QString& path, int selectedEntry) {
 }
 
 void EditorWindow::newFile() {
-    auto path = QFileDialog::getSaveFileName(this, tr("New Model Swapper configuration"),
-                                           QDir(dataDirectory_).filePath(QStringLiteral("New_MS.json")),
-                                           tr("Model Swapper configurations (*_MS.json)"));
-    if (path.isEmpty()) {
+    bool accepted = false;
+    auto name = QInputDialog::getText(this, tr("New configuration"), tr("Filename:"),
+                                    QLineEdit::Normal, QStringLiteral("New_MS.json"), &accepted).trimmed();
+    if (!accepted) {
         return;
     }
-    path = configurationPath(path);
-    path = QFileInfo(path).absoluteFilePath();
-    if (QFileInfo::exists(path)) {
+    if (!validConfigurationName(name)) {
+        QMessageBox::warning(this, tr("Invalid filename"), tr("Enter a filename without folder paths or special filename characters."));
+        return;
+    }
+    const auto path = QDir(dataDirectory_).absoluteFilePath(configurationPath(name));
+    const auto exists = [this, &path] {
+        if (QFileInfo::exists(path)) return true;
+        const auto label = QDir(dataDirectory_).relativeFilePath(path);
+        return std::any_of(discoveredFiles_.cbegin(), discoveredFiles_.cend(), [this, &label](const QString& file) {
+            return configurationLabel(file).compare(label, Qt::CaseInsensitive) == 0 && QFileInfo::exists(file);
+        });
+    };
+    if (exists()) {
         QMessageBox::warning(this, tr("File already exists"),
                              tr("Choose a new filename. Select an existing configuration from the file list to edit it."));
         return;
@@ -404,7 +407,7 @@ void EditorWindow::newFile() {
         return;
     }
     // Saving the previous document may have just created the requested path.
-    if (QFileInfo::exists(path)) {
+    if (exists()) {
         QMessageBox::warning(this, tr("File already exists"), tr("Choose a new filename for the new configuration."));
         return;
     }
@@ -437,8 +440,7 @@ void EditorWindow::renameFile() {
     if (!accepted) {
         return;
     }
-    static const QRegularExpression invalidName(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
-    if (name.isEmpty() || name == QStringLiteral(".") || name == QStringLiteral("..") || name.contains(invalidName)) {
+    if (!validConfigurationName(name)) {
         QMessageBox::warning(this, tr("Invalid filename"), tr("Enter a filename without folder paths or special filename characters."));
         return;
     }
@@ -462,6 +464,31 @@ void EditorWindow::renameFile() {
     populateEntries(currentEntry_);
     updateState();
     statusBar()->showMessage(tr("Renamed to %1").arg(name), 6000);
+}
+
+void EditorWindow::deleteFile() {
+    if (currentPath_.isEmpty()) {
+        return;
+    }
+    const auto name = configurationLabel(currentPath_);
+    auto message = tr("Permanently delete %1?\n\nThis cannot be undone.").arg(name);
+    if (dirty_) {
+        message += tr("\n\nUnsaved edits to this configuration will be discarded.");
+    }
+    if (QMessageBox::warning(this, tr("Delete configuration"), message,
+                             QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes) {
+        return;
+    }
+    QString error;
+    if (!ConfigFiles::remove(currentPath_, originalSource_, error)) {
+        QMessageBox::warning(this, tr("Cannot delete configuration"), error);
+        return;
+    }
+    discoveredFiles_.removeAll(currentPath_);
+    clearDocument();
+    populateFiles();
+    scanFiles();
+    statusBar()->showMessage(tr("Deleted %1").arg(name), 6000);
 }
 
 bool EditorWindow::saveFile() {
@@ -516,8 +543,11 @@ bool EditorWindow::reportFormErrors() {
 
 QString EditorWindow::entryLabel(int row) const {
     const auto entry = entries_.at(row).toObject();
-    QString description;
+    QString description = entry.value(QStringLiteral("Title")).toString().trimmed();
     for (const auto& key : {QStringLiteral("OriginalModel"), QStringLiteral("BaseFormID"), QStringLiteral("ReferenceID")}) {
+        if (!description.isEmpty()) {
+            break;
+        }
         const auto target = entry.value(key);
         const auto values = target.isArray() ? target.toArray() : QJsonArray{target};
         for (const auto& value : values) {
@@ -647,6 +677,7 @@ void EditorWindow::updateState() {
     const bool selected = currentEntry_ >= 0 && currentEntry_ < entries_.size();
     saveAction_->setEnabled(open && dirty_);
     renameAction_->setEnabled(open);
+    deleteAction_->setEnabled(open);
     addAction_->setEnabled(open);
     duplicateAction_->setEnabled(selected);
     removeAction_->setEnabled(selected);

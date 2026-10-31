@@ -7,7 +7,6 @@
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QJsonArray>
@@ -17,10 +16,13 @@
 #include <QListWidget>
 #include <QLineEdit>
 #include <QLayout>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPixmap>
 #include <QStatusBar>
 #include <QProcess>
+#include <QPushButton>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -115,7 +117,7 @@ namespace {
     }
 
     QLineEdit* conditionInput(EditorWindow& window, const QString& fieldName) {
-        selectSettingsTab(window, QStringLiteral("Conditions"));
+        selectSettingsTab(window, QStringLiteral("Inclusions"));
         for (auto* included : window.findChildren<QCheckBox*>()) {
             if (included->text() != fieldName || !included->isChecked()) continue;
             for (auto* text : included->parentWidget()->findChildren<QLineEdit*>()) {
@@ -157,30 +159,47 @@ namespace {
         });
     }
 
-    void answerNewFileDialog(const QString& path, bool accept = true,
-                             QMessageBox::StandardButton nextResponse = QMessageBox::NoButton) {
-        QTimer::singleShot(0, [path, accept, nextResponse] {
-            auto* dialog = qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
-            require(dialog != nullptr, "expected new-configuration file dialog");
-            if (!accept) {
-                dialog->reject();
-                return;
-            }
-            dialog->setOption(QFileDialog::DontConfirmOverwrite);
-            dialog->setDirectory(QFileInfo(path).absolutePath());
-            auto* filename = dialog->findChild<QLineEdit*>(QStringLiteral("fileNameEdit"));
-            require(filename != nullptr, "find filename input in the nonnative file dialog");
-            filename->setText(QFileInfo(path).fileName());
-            require(dialog->selectedFiles() == QStringList{QFileInfo(path).absoluteFilePath()},
-                    "new-configuration dialog uses the requested test filename");
+    void answerNewFilenameDialog(const QString& name, bool accept = true,
+                                 QMessageBox::StandardButton nextResponse = QMessageBox::NoButton) {
+        QTimer::singleShot(0, [name, accept, nextResponse] {
+            auto* dialog = qobject_cast<QInputDialog*>(QApplication::activeModalWidget());
+            require(dialog != nullptr, "New asks for a filename without a folder picker");
+            require(dialog->textValue() == QStringLiteral("New_MS.json"), "New proposes the default configuration filename");
+            dialog->setTextValue(name);
             if (nextResponse != QMessageBox::NoButton) answerNextDialog(nextResponse);
-            require(QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection), "accept selected new-configuration filename");
+            if (accept) dialog->accept();
+            else dialog->reject();
+        });
+    }
+
+    void answerDeleteDialog(const QString& name, bool dirty, QMessageBox::StandardButton response,
+                            QMessageBox::StandardButton nextResponse = QMessageBox::NoButton) {
+        QTimer::singleShot(0, [name, dirty, response, nextResponse] {
+            auto* dialog = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            require(dialog && dialog->windowTitle() == QStringLiteral("Delete configuration"),
+                    "Delete asks for confirmation before removing the configuration");
+            require(dialog->standardButtons() == (QMessageBox::Yes | QMessageBox::No) &&
+                        dialog->defaultButton() == dialog->button(QMessageBox::No),
+                    "permanent deletion requires an explicit Yes and defaults to No");
+            const auto message = dialog->text() + dialog->informativeText();
+            require(message.contains(name) && message.contains(QStringLiteral("permanent"), Qt::CaseInsensitive),
+                    "delete confirmation names the selected file and explains permanent removal");
+            if (dirty) {
+                require(message.contains(QStringLiteral("unsaved"), Qt::CaseInsensitive) &&
+                            message.contains(QStringLiteral("discard"), Qt::CaseInsensitive),
+                        "dirty deletion explains that pending changes will be discarded");
+            }
+            if (nextResponse != QMessageBox::NoButton) answerNextDialog(nextResponse);
+            dialog->button(response)->click();
         });
     }
 
     void renderPreview(const QString& screenshotPath);
     void testFileActions();
+    void testNewConfigurations();
+    void testDeleteConfigurations();
     void testEntryLabels();
+    void testEntryTitles();
     void testRescan();
 }
 
@@ -226,18 +245,20 @@ int main(int argc, char* argv[]) {
     auto* create = window.findChild<QAction*>(QStringLiteral("newConfiguration"));
     auto* rename = window.findChild<QAction*>(QStringLiteral("renameConfiguration"));
     auto* rescan = window.findChild<QAction*>(QStringLiteral("rescanConfigurations"));
-    auto* chooseDirectory = window.findChild<QAction*>(QStringLiteral("chooseDataDirectory"));
+    auto* deleteFile = window.findChild<QAction*>(QStringLiteral("deleteConfiguration"));
     auto* add = window.findChild<QAction*>(QStringLiteral("addEntry"));
     auto* duplicate = window.findChild<QAction*>(QStringLiteral("duplicateEntry"));
     auto* remove = window.findChild<QAction*>(QStringLiteral("removeEntry"));
     auto* save = window.findChild<QAction*>(QStringLiteral("saveConfiguration"));
-    require(files && entries && create && rename && rescan && chooseDirectory && add && duplicate && remove && save,
+    require(files && entries && create && rename && rescan && deleteFile && add && duplicate && remove && save,
             "find window controls");
+    require(!window.findChild<QAction*>(QStringLiteral("chooseDataDirectory")),
+            "the editor keeps its startup Data folder without a folder-switch action");
     auto* fileActions = window.findChild<QToolBar*>(QStringLiteral("fileActions"));
     auto* entryActions = window.findChild<QToolBar*>(QStringLiteral("entryActions"));
     auto* documentActions = window.findChild<QToolBar*>(QStringLiteral("documentActions"));
     require(fileActions && entryActions && documentActions, "find local action bars");
-    require(fileActions->actions() == QList<QAction*>{create, rename, rescan, chooseDirectory},
+    require(fileActions->actions() == QList<QAction*>{create, rename, rescan, deleteFile},
             "configuration file actions stay together above their file list");
     require(entryActions->actions() == QList<QAction*>{add, duplicate, remove},
             "entry actions stay together above their entry list");
@@ -249,11 +270,11 @@ int main(int argc, char* argv[]) {
     require(window.findChildren<QToolBar*>().size() == 3 &&
                 window.findChildren<QToolBar*>(QString(), Qt::FindDirectChildrenOnly).isEmpty(),
             "local action bars replace the mixed global toolbar");
-    auto* tabs = selectSettingsTab(window, QStringLiteral("Models"));
+    auto* tabs = selectSettingsTab(window, QStringLiteral("Basics"));
     require(documentActions->parentWidget()->isAncestorOf(tabs),
             "Save and entry settings belong to the same document panel");
-    require(tabs->count() == 4 && tabs->tabText(0) == QStringLiteral("Models") &&
-                tabs->tabText(1) == QStringLiteral("Targets") && tabs->tabText(2) == QStringLiteral("Conditions") &&
+    require(tabs->count() == 4 && tabs->tabText(0) == QStringLiteral("Basics") &&
+                tabs->tabText(1) == QStringLiteral("Targets") && tabs->tabText(2) == QStringLiteral("Inclusions") &&
                 tabs->tabText(3) == QStringLiteral("Exclusions"),
             "entry settings expose only the four supported-field tabs");
     for (auto* button : window.findChildren<QAbstractButton*>()) {
@@ -338,7 +359,10 @@ int main(int argc, char* argv[]) {
     answerNextDialog(QMessageBox::Discard);
     require(window.close(), "discard permits window close");
     testFileActions();
+    testNewConfigurations();
+    testDeleteConfigurations();
     testEntryLabels();
+    testEntryTitles();
     testRescan();
     std::cout << "Editor window interaction tests passed.\n";
     return EXIT_SUCCESS;
@@ -421,7 +445,7 @@ namespace {
         rescan->trigger();
         require(files->count() == 2 && currentFile() == selectedPath && containsFile(addedPath) && !containsFile(removedPath),
                 "rescan updates added and removed configuration filenames while retaining the selected existing file");
-        selectSettingsTab(window, QStringLiteral("Conditions"));
+        selectSettingsTab(window, QStringLiteral("Inclusions"));
         bool pluginDropdownRefreshed = false;
         for (auto* included : window.findChildren<QCheckBox*>()) {
             if (included->text() != QStringLiteral("LocationID")) continue;
@@ -472,6 +496,68 @@ namespace {
         require(window.close(), "close the clean rescan fixture");
     }
 
+    void testEntryTitles() {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "create title interaction fixtures");
+        const auto path = temporary.filePath(QStringLiteral("Titles_MS.json"));
+        const auto legacy = QJsonDocument::fromJson(document(QStringLiteral("Original.nif"))).array().first().toObject();
+        writeFile(path, QJsonDocument(QJsonArray{legacy}).toJson());
+        {
+            EditorWindow window(temporary.path());
+            selectSettingsTab(window, QStringLiteral("Basics"));
+            auto* entries = window.findChild<QListWidget*>(QStringLiteral("swapEntries"));
+            auto* save = window.findChild<QAction*>(QStringLiteral("saveConfiguration"));
+            auto* duplicate = window.findChild<QAction*>(QStringLiteral("duplicateEntry"));
+            require(entries && save && duplicate, "find title interaction controls");
+            const auto titleEnabled = [&window]() -> QCheckBox* {
+                for (auto* check : window.findChildren<QCheckBox*>())
+                    if (check->text() == QStringLiteral("Title")) return check;
+                require(false, "find optional title control");
+                return nullptr;
+            };
+            const auto titleInput = [&window]() -> QLineEdit* {
+                for (auto* input : window.findChildren<QLineEdit*>())
+                    if (input->accessibleName() == QStringLiteral("Title")) return input;
+                require(false, "find single-line title input");
+                return nullptr;
+            };
+            require(!titleEnabled()->isChecked() && !save->isEnabled(), "legacy entries start without a title or unsaved changes");
+            titleEnabled()->setChecked(true);
+            titleInput()->setText(QStringLiteral("   "));
+            require(entries->item(0)->text() == QStringLiteral("1. Original.nif"), "blank titles retain the target-based label");
+            titleInput()->setText(QStringLiteral("Riverwood firewood"));
+            require(entries->item(0)->text() == QStringLiteral("1. Riverwood firewood") && save->isEnabled(),
+                    "typing a title updates its swap entry name immediately");
+            saveWithoutDialog(save);
+            auto titled = legacy;
+            titled.insert(QStringLiteral("Title"), QStringLiteral("Riverwood firewood"));
+            require(QJsonDocument::fromJson(readFile(path)).array() == QJsonArray{titled},
+                    "saving the title adds only its metadata while preserving the existing swap settings");
+            duplicate->trigger();
+            require(entries->count() == 2 && entries->item(1)->text() == QStringLiteral("2. Riverwood firewood"),
+                    "duplicating a swap retains its title");
+            titleInput()->setText(QStringLiteral("Whiterun firewood"));
+            saveWithoutDialog(save);
+            entries->setCurrentRow(0);
+            titleEnabled()->setChecked(false);
+            require(entries->item(0)->text() == QStringLiteral("1. Original.nif") &&
+                        entries->item(1)->text() == QStringLiteral("2. Whiterun firewood"),
+                    "disabling a title restores its target fallback without changing another entry's title");
+            saveWithoutDialog(save);
+            auto second = legacy;
+            second.insert(QStringLiteral("Title"), QStringLiteral("Whiterun firewood"));
+            require(QJsonDocument::fromJson(readFile(path)).array() == QJsonArray{legacy, second},
+                    "each entry saves its own title and disabled titles stay omitted");
+            require(window.close(), "close the saved title fixture");
+        }
+        EditorWindow reopened(temporary.path());
+        const auto* entries = reopened.findChild<QListWidget*>(QStringLiteral("swapEntries"));
+        require(entries && entries->count() == 2 && entries->item(0)->text() == QStringLiteral("1. Original.nif") &&
+                    entries->item(1)->text() == QStringLiteral("2. Whiterun firewood"),
+                "saved entry titles and legacy fallbacks are restored when reopening the configuration");
+        require(reopened.close(), "close the reloaded title fixture");
+    }
+
     void testEntryLabels() {
         QTemporaryDir temporary;
         require(temporary.isValid(), "create entry-label fixtures");
@@ -484,7 +570,10 @@ namespace {
             QJsonObject{{"OriginalModel", ""}, {"BaseFormID", QJsonArray{}},
                         {"ReferenceID", QJsonArray{" ", "Example.esp|001237"}}},
             QJsonObject{{"BaseFormID", 4294967295.0}},
-            QJsonObject{}
+            QJsonObject{},
+            QJsonObject{{"Title", "Named swap"}, {"OriginalModel", "Original.nif"}},
+            QJsonObject{{"Title", "   "}, {"OriginalModel", "Original.nif"}},
+            QJsonObject{{"Title", 123}, {"OriginalModel", "Original.nif"}}
         };
         for (qsizetype index = 0; index < targets.size(); ++index) {
             auto entry = targets.at(index).toObject();
@@ -498,7 +587,8 @@ namespace {
         auto* save = window.findChild<QAction*>(QStringLiteral("saveConfiguration"));
         require(entries && save && entries->count() == targets.size(), "load all entry-label fixtures");
         const QStringList descriptions{"Original.nif", "Second.nif", "Example.esp|001235",
-                                       "Example.esp|001237", "4294967295", "New swap"};
+                                       "Example.esp|001237", "4294967295", "New swap",
+                                       "Named swap", "Original.nif", "Original.nif"};
         for (int row = 0; row < entries->count(); ++row) {
             require(entries->item(row)->text() == QStringLiteral("%1. %2").arg(row + 1).arg(descriptions.at(row)),
                     "entry names use the first populated enabled target, including scalar and list forms");
@@ -540,8 +630,10 @@ namespace {
         require(emptyDirectory.isValid(), "create empty configuration directory");
         EditorWindow emptyWindow(emptyDirectory.path());
         auto* emptyRename = emptyWindow.findChild<QAction*>(QStringLiteral("renameConfiguration"));
+        auto* emptyDelete = emptyWindow.findChild<QAction*>(QStringLiteral("deleteConfiguration"));
         require(emptyRename && !emptyRename->isEnabled() && emptyRename->shortcut() == QKeySequence(Qt::Key_F2),
                 "Rename has F2 shortcut and is disabled without a selected file");
+        require(emptyDelete && !emptyDelete->isEnabled(), "Delete is disabled without a selected configuration");
         require(emptyWindow.close(), "close empty editor without a prompt");
 
         QTemporaryDir temporary;
@@ -633,19 +725,19 @@ namespace {
         require(QJsonDocument::fromJson(readFile(currentPath)).array() == QJsonArray{expectedEntry},
                 "saving after a confirmed rename uses the refreshed file baseline");
 
-        answerNewFileDialog(QString(), false);
+        answerNewFilenameDialog(QString(), false);
         create->trigger();
         require(files->count() == 2 && entries->count() == 1 && !save->isEnabled(),
                 "cancelling New preserves the current configuration");
         checkSelection();
-        answerNewFileDialog(collisionPath, true, QMessageBox::Ok);
+        answerNewFilenameDialog(QFileInfo(collisionPath).fileName(), true, QMessageBox::Ok);
         create->trigger();
         require(files->count() == 2 && entries->count() == 1 && !save->isEnabled() &&
                     readFile(collisionPath) == collisionSource,
                 "failed New preserves the selected document and existing destination");
         checkSelection();
 
-        answerNewFileDialog(QDir(temporary.path()).filePath(QStringLiteral("Fresh")));
+        answerNewFilenameDialog(QStringLiteral("Fresh"));
         create->trigger();
         currentPath = QDir(temporary.path()).filePath(QStringLiteral("Fresh_MS.json"));
         const auto emptySource = readFile(currentPath);
@@ -658,13 +750,195 @@ namespace {
         require(entries->count() == 1 && save->isEnabled() && readFile(currentPath) == emptySource,
                 "Add entry creates a pending rule while the new file remains empty on disk");
         const auto cancelledPath = QDir(temporary.path()).filePath(QStringLiteral("Aborted_MS.json"));
-        answerNewFileDialog(cancelledPath, true, QMessageBox::Cancel);
+        answerNewFilenameDialog(QFileInfo(cancelledPath).fileName(), true, QMessageBox::Cancel);
         create->trigger();
         require(!QFileInfo::exists(cancelledPath) && files->count() == 3 && entries->count() == 1 && save->isEnabled(),
                 "cancelling pending edits prevents New from creating or selecting another file");
         checkSelection();
         answerNextDialog(QMessageBox::Discard);
         require(window.close(), "discard pending blank entry when closing file-action fixture");
+    }
+
+    void testNewConfigurations() {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "create filename-only New fixtures");
+        const QDir data(temporary.path());
+        require(QDir().mkpath(data.filePath(QStringLiteral("Nested"))), "create selected configuration subfolder");
+        const auto nestedPath = data.filePath(QStringLiteral("Nested/Source_MS.json"));
+        const auto collisionPath = data.filePath(QStringLiteral("Existing_MS.json"));
+        const auto nestedSource = document(QStringLiteral("NestedOriginal.nif"));
+        const auto collisionSource = document(QStringLiteral("ExistingOriginal.nif"));
+        writeFile(nestedPath, nestedSource);
+        writeFile(collisionPath, collisionSource);
+        EditorWindow window(data.path());
+        auto* files = window.findChild<QListWidget*>(QStringLiteral("configurationFiles"));
+        auto* entries = window.findChild<QListWidget*>(QStringLiteral("swapEntries"));
+        auto* create = window.findChild<QAction*>(QStringLiteral("newConfiguration"));
+        auto* save = window.findChild<QAction*>(QStringLiteral("saveConfiguration"));
+        require(files && entries && create && save, "find filename-only New controls");
+        const auto selectPath = [&](const QString& path) {
+            for (int row = 0; row < files->count(); ++row) {
+                if (files->item(row)->data(Qt::UserRole).toString() == path) {
+                    files->setCurrentRow(row);
+                    return;
+                }
+            }
+            require(false, "select the requested New fixture");
+        };
+        const auto selectedPath = [&] {
+            require(files->currentItem() != nullptr, "New keeps a configuration selected");
+            return files->currentItem()->data(Qt::UserRole).toString();
+        };
+        selectPath(nestedPath);
+        for (const auto& invalid : QStringList{
+                 QString(), QStringLiteral("   "), QStringLiteral("."), QStringLiteral(".."),
+                 QStringLiteral("Nested/Unexpected"), QStringLiteral("Nested\\Unexpected"),
+                 QStringLiteral("../Unexpected"), QStringLiteral("C:\\Unexpected_MS.json"),
+                 data.filePath(QStringLiteral("Absolute_MS.json")), QStringLiteral("Bad:name")}) {
+            answerNewFilenameDialog(invalid, true, QMessageBox::Ok);
+            create->trigger();
+            require(files->count() == 2 && selectedPath() == nestedPath && entries->count() == 1 &&
+                        !save->isEnabled() && readFile(nestedPath) == nestedSource && readFile(collisionPath) == collisionSource,
+                    "empty, folder, absolute, traversal, and invalid names cannot create or switch configurations");
+        }
+        answerNewFilenameDialog(QStringLiteral("Existing.json"), true, QMessageBox::Ok);
+        create->trigger();
+        require(files->count() == 2 && selectedPath() == nestedPath && readFile(collisionPath) == collisionSource,
+                "normalized New filename collisions preserve the selected nested file and existing destination");
+
+        answerNewFilenameDialog(QStringLiteral("  Fresh.json  "));
+        create->trigger();
+        const auto freshPath = data.filePath(QStringLiteral("Fresh_MS.json"));
+        require(selectedPath() == freshPath && files->currentItem()->text() == QStringLiteral("Fresh_MS.json") &&
+                    QJsonDocument::fromJson(readFile(freshPath)).array().isEmpty() && entries->count() == 0 && !save->isEnabled() &&
+                    !QFileInfo::exists(data.filePath(QStringLiteral("Nested/Fresh_MS.json"))),
+                "New trims and normalizes the filename, immediately creating empty JSON in Data rather than the selected subfolder");
+        answerNewFilenameDialog(QStringLiteral("Already_ms.JSON"));
+        create->trigger();
+        const auto normalizedPath = data.filePath(QStringLiteral("Already_MS.json"));
+        const auto normalizedDocument = QJsonDocument::fromJson(readFile(normalizedPath));
+        require(selectedPath() == normalizedPath && normalizedDocument.isArray() && normalizedDocument.array().isEmpty(),
+                "New normalizes an existing case-insensitive suffix without adding it twice");
+
+        selectPath(nestedPath);
+        editCondition(window, QStringLiteral("LocationID"), QStringLiteral("777"));
+        const auto cancelledPath = data.filePath(QStringLiteral("CancelPending_MS.json"));
+        answerNewFilenameDialog(QStringLiteral("CancelPending"), true, QMessageBox::Cancel);
+        create->trigger();
+        require(!QFileInfo::exists(cancelledPath) && selectedPath() == nestedPath && save->isEnabled() &&
+                    conditionInput(window, QStringLiteral("LocationID"))->text() == QStringLiteral("777") && readFile(nestedPath) == nestedSource,
+                "Cancel on pending edits prevents immediate creation and retains the selected document and unsaved values");
+        answerNewFilenameDialog(QStringLiteral("Ignored"), false);
+        create->trigger();
+        require(selectedPath() == nestedPath && save->isEnabled() && !QFileInfo::exists(data.filePath(QStringLiteral("Ignored_MS.json"))),
+                "cancelling the filename prompt leaves pending edits intact without another confirmation");
+
+        answerNewFilenameDialog(QStringLiteral("SavePending"), true, QMessageBox::Save);
+        create->trigger();
+        const auto savedPath = data.filePath(QStringLiteral("SavePending_MS.json"));
+        const auto savedPrevious = readFile(nestedPath);
+        const auto savedEmpty = QJsonDocument::fromJson(readFile(savedPath));
+        require(selectedPath() == savedPath && entries->count() == 0 && !save->isEnabled() && savedEmpty.isArray() &&
+                    savedEmpty.array().isEmpty() && QJsonDocument::fromJson(savedPrevious).array().first().toObject()
+                        .value(QStringLiteral("LocationID")) == QStringLiteral("Example.esp|777"),
+                "Save before New writes the previous edits and immediately selects a clean empty file in Data");
+        selectPath(nestedPath);
+        editCondition(window, QStringLiteral("LocationID"), QStringLiteral("888"));
+        answerNewFilenameDialog(QStringLiteral("DiscardPending"), true, QMessageBox::Discard);
+        create->trigger();
+        const auto discardedPath = data.filePath(QStringLiteral("DiscardPending_MS.json"));
+        const auto discardedEmpty = QJsonDocument::fromJson(readFile(discardedPath));
+        require(selectedPath() == discardedPath && entries->count() == 0 && !save->isEnabled() && discardedEmpty.isArray() &&
+                    discardedEmpty.array().isEmpty() && readFile(nestedPath) == savedPrevious,
+                "Discard before New preserves the saved previous bytes while immediately creating the next empty file");
+        require(window.close(), "close the clean filename-only New fixture");
+    }
+
+    void testDeleteConfigurations() {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "create isolated Delete fixtures");
+        const QDir data(temporary.path());
+        require(QDir().mkpath(data.filePath(QStringLiteral("Nested"))), "create another configuration subfolder for Delete");
+        const auto firstPath = data.filePath(QStringLiteral("A_MS.json"));
+        const auto secondPath = data.filePath(QStringLiteral("Nested/B_MS.json"));
+        const auto firstSource = document(QStringLiteral("DeleteSelected.nif"));
+        const auto secondSource = document(QStringLiteral("KeepOther.nif"));
+        writeFile(firstPath, firstSource);
+        writeFile(secondPath, secondSource);
+        EditorWindow window(data.path());
+        auto* files = window.findChild<QListWidget*>(QStringLiteral("configurationFiles"));
+        auto* entries = window.findChild<QListWidget*>(QStringLiteral("swapEntries"));
+        auto* deleteFile = window.findChild<QAction*>(QStringLiteral("deleteConfiguration"));
+        auto* rename = window.findChild<QAction*>(QStringLiteral("renameConfiguration"));
+        auto* save = window.findChild<QAction*>(QStringLiteral("saveConfiguration"));
+        auto* add = window.findChild<QAction*>(QStringLiteral("addEntry"));
+        auto* toolbar = window.findChild<QToolBar*>(QStringLiteral("fileActions"));
+        require(files && entries && deleteFile && rename && save && add && toolbar && deleteFile->isEnabled(),
+                "Delete is available for the selected saved configuration");
+        require(files->actions().contains(deleteFile), "Delete is available in the file list context menu");
+        bool inFileMenu = false;
+        for (auto* menuAction : window.menuBar()->actions()) {
+            if (auto* menu = menuAction->menu(); menu && menu->actions().contains(deleteFile)) inFileMenu = true;
+        }
+        require(inFileMenu, "Delete is available from the menu as well as the local file toolbar");
+        auto* deleteButton = qobject_cast<QAbstractButton*>(toolbar->widgetForAction(deleteFile));
+        require(deleteButton != nullptr, "find the actual local Delete button");
+        answerDeleteDialog(QStringLiteral("A_MS.json"), false, QMessageBox::No);
+        deleteButton->click();
+        require(files->count() == 2 && entries->count() == 1 && !save->isEnabled() &&
+                    files->currentItem()->data(Qt::UserRole).toString() == firstPath && readFile(firstPath) == firstSource &&
+                    readFile(secondPath) == secondSource,
+                "No on the actual Delete button keeps both files and the selected clean document unchanged");
+
+        editCondition(window, QStringLiteral("LocationID"), QStringLiteral("234"));
+        answerDeleteDialog(QStringLiteral("A_MS.json"), true, QMessageBox::No);
+        deleteFile->trigger();
+        require(save->isEnabled() && conditionInput(window, QStringLiteral("LocationID"))->text() == QStringLiteral("234") &&
+                    readFile(firstPath) == firstSource,
+                "No on dirty deletion preserves pending values and does not save them");
+        QTimer unexpectedSavePrompt;
+        QObject::connect(&unexpectedSavePrompt, &QTimer::timeout, [] {
+            const auto* modal = QApplication::activeModalWidget();
+            require(!modal || modal->windowTitle() == QStringLiteral("Delete configuration"),
+                    "confirmed dirty Delete must discard directly without asking to save");
+        });
+        unexpectedSavePrompt.start(1);
+        answerDeleteDialog(QStringLiteral("A_MS.json"), true, QMessageBox::Yes);
+        deleteFile->trigger();
+        unexpectedSavePrompt.stop();
+        require(!QFileInfo::exists(firstPath) && readFile(secondPath) == secondSource && files->count() == 1 &&
+                    files->currentItem()->data(Qt::UserRole).toString() == secondPath && entries->count() == 1 &&
+                    entries->item(0)->text() == QStringLiteral("1. KeepOther.nif") && !save->isEnabled() && deleteFile->isEnabled(),
+                "Yes permanently removes only the selected file, drops pending edits, and selects the remaining configuration cleanly");
+        answerDeleteDialog(QStringLiteral("B_MS.json"), false, QMessageBox::Yes);
+        deleteFile->trigger();
+        require(!QFileInfo::exists(secondPath) && files->count() == 0 && files->currentItem() == nullptr && entries->count() == 0 &&
+                    !deleteFile->isEnabled() && !rename->isEnabled() && !save->isEnabled() && !add->isEnabled(),
+                "deleting the last configuration clears document controls and disables file and entry mutations");
+        require(window.close(), "close the empty Delete fixture without an unsaved prompt");
+
+        const auto conflictPath = data.filePath(QStringLiteral("Conflict_MS.json"));
+        writeFile(conflictPath, firstSource);
+        EditorWindow conflict(data.path());
+        auto* conflictFiles = conflict.findChild<QListWidget*>(QStringLiteral("configurationFiles"));
+        auto* conflictEntries = conflict.findChild<QListWidget*>(QStringLiteral("swapEntries"));
+        auto* conflictDelete = conflict.findChild<QAction*>(QStringLiteral("deleteConfiguration"));
+        auto* conflictSave = conflict.findChild<QAction*>(QStringLiteral("saveConfiguration"));
+        auto* duplicate = conflict.findChild<QAction*>(QStringLiteral("duplicateEntry"));
+        require(conflictFiles && conflictEntries && conflictDelete && conflictSave && duplicate, "find Delete conflict controls");
+        editCondition(conflict, QStringLiteral("LocationID"), QStringLiteral("345"));
+        duplicate->trigger();
+        const auto changedSource = document(QStringLiteral("ChangedExternally.nif"));
+        writeFromExternalProcess(conflictPath, changedSource);
+        answerDeleteDialog(QStringLiteral("Conflict_MS.json"), true, QMessageBox::Yes, QMessageBox::Ok);
+        conflictDelete->trigger();
+        require(readFile(conflictPath) == changedSource && conflictFiles->count() == 1 &&
+                    conflictFiles->currentItem()->data(Qt::UserRole).toString() == conflictPath && conflictEntries->count() == 2 &&
+                    conflictEntries->currentRow() == 1 && conflictSave->isEnabled() && conflictDelete->isEnabled() &&
+                    conditionInput(conflict, QStringLiteral("LocationID"))->text() == QStringLiteral("345"),
+                "an external-source mismatch rejects Delete while preserving the external bytes, selected entry, and all pending edits");
+        answerNextDialog(QMessageBox::Discard);
+        require(conflict.close(), "discard only pending fixture edits after rejected Delete");
     }
 
     void renderPreview(const QString& screenshotPath) {
@@ -674,6 +948,7 @@ namespace {
             writeFile(QDir(previewDirectory.path()).filePath(name), QByteArray());
         }
         const QJsonObject previewEntry{
+            {QStringLiteral("Title"), QStringLiteral("Seasonal farmhouse")},
             {QStringLiteral("OriginalModel"), QJsonArray{QStringLiteral("Architecture\\Farmhouse.nif"),
                                                        QStringLiteral("Architecture\\FarmhouseSnow.nif")}},
             {QStringLiteral("Variants"), QJsonArray{QStringLiteral("ModelSwapper\\FarmhouseSummer.nif"),
@@ -690,7 +965,7 @@ namespace {
         writeFile(QDir(previewDirectory.path()).filePath(QStringLiteral("SeasonalSwaps_MS.json")),
                   QJsonDocument(QJsonArray{previewEntry}).toJson());
         EditorWindow preview(previewDirectory.path());
-        selectSettingsTab(preview, qEnvironmentVariable("MS_EDITOR_TEST_TAB", QStringLiteral("Models")));
+        selectSettingsTab(preview, qEnvironmentVariable("MS_EDITOR_TEST_TAB", QStringLiteral("Basics")));
         preview.resize(1320, 860);
         preview.setAttribute(Qt::WA_DontShowOnScreen);
         preview.show();

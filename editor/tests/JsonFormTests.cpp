@@ -143,6 +143,48 @@ void testEdits() {
     require(changes >= 8, "Widget edits must notify the document about changes");
 }
 
+void testTitleEditing() {
+    JsonForm form({"Skyrim.esm"});
+    const QJsonObject legacy{{"OriginalModel", "Original.nif"}, {"Variants", QJsonArray{"Variant.nif"}},
+                             {"Extension", QJsonObject{{"preserved", true}}}};
+    form.setValue(legacy);
+    int changes = 0;
+    QObject::connect(&form, &JsonForm::changed, [&changes] { ++changes; });
+    auto* title = field(form, "Title");
+    auto* included = title->findChild<QCheckBox*>();
+    auto* input = title->findChild<QLineEdit*>();
+    require(included && !included->isChecked() && input && input->accessibleName() == "Title" &&
+                !input->placeholderText().isEmpty() && form.value() == legacy,
+            "Legacy entries must offer an optional single-line title without adding it to JSON");
+    auto expected = legacy;
+    field(form, "OriginalModel")->findChild<QLineEdit*>()->setText("EditedOriginal.nif");
+    expected.insert("OriginalModel", "EditedOriginal.nif");
+    require(form.value() == expected, "Unrelated edits must keep an absent Title omitted");
+
+    included->setChecked(true);
+    require(form.value().value("Title").isString() && form.value().value("Title").toString().isEmpty(),
+            "Enabling Title must create a JSON string");
+    input->setText(QString::fromUtf8("Summer carts \xE2\x80\x94 Riften"));
+    expected.insert("Title", input->text());
+    require(form.value() == expected && changes >= 3 && form.errors().isEmpty(),
+            "Editing a title must notify the document and preserve its exact text and other properties");
+    button(field(form, "OriginalModel"), "Use list")->click();
+    processDeletes();
+    expected.insert("OriginalModel", QJsonArray{"EditedOriginal.nif"});
+    require(form.value() == expected, "Rebuilding other controls must retain the edited title");
+    included->setChecked(false);
+    require(!form.value().contains("Title"), "Disabling Title must omit it from the saved entry");
+    included->setChecked(true);
+    require(form.value() == expected, "Re-enabling Title must retain its previously entered text");
+    form.setValue(expected);
+    processDeletes();
+    require(form.value() == expected && field(form, "Title")->findChild<QLineEdit*>()->text() == expected.value("Title").toString(),
+            "An existing title must round trip through the single-line control");
+    form.setValue(legacy);
+    processDeletes();
+    require(form.value() == legacy, "A previous entry's title must not leak into a legacy entry");
+}
+
 void testInvalidValuesCanBeRepaired() {
     JsonForm form({"Skyrim.esm"});
     form.setValue({{"OriginalModel", true}, {"Variants", "Replacement.nif"}, {"BaseFormID", false}, {"ActiveTimeSpan", 5}});
@@ -155,6 +197,17 @@ void testInvalidValuesCanBeRepaired() {
     button(field(form, "BaseFormID"), "Reset field")->click();
     processDeletes();
     require(form.value().value("BaseFormID").isString(), "Malformed ID type can be reset to an editable ID");
+    for (const auto& malformed : QJsonArray{42, true, QJsonValue::Null, QJsonArray{"unexpected"}, QJsonObject{{"unexpected", true}}}) {
+        const QJsonObject entry{{"Title", malformed}, {"OriginalModel", "Original.nif"}, {"Variants", QJsonArray{"Variant.nif"}}};
+        form.setValue(entry);
+        processDeletes();
+        require(form.value() == entry, "Malformed titles must retain their original JSON type and value on load");
+        button(field(form, "Title"), "Reset field")->click();
+        processDeletes();
+        require(form.value().value("Title").isString() && form.value().value("Title").toString().isEmpty() &&
+                    field(form, "Title")->findChild<QLineEdit*>()->accessibleName() == "Title",
+                "Malformed titles must reset explicitly to an editable empty string");
+    }
 }
 
 void testLegacyIDReplacement() {
@@ -317,7 +370,7 @@ void testUnknownPropertiesPreservedWithoutControls() {
 
 void testTabPartitionAndNavigation() {
     JsonForm form({"Skyrim.esm", "Installed.esp"});
-    QJsonObject entry{{"OriginalModel", QJsonArray{"One.nif", "Two.nif"}},
+    QJsonObject entry{{"Title", "Named swap"}, {"OriginalModel", QJsonArray{"One.nif", "Two.nif"}},
                       {"Variants", QJsonArray{"Variant.nif"}},
                       {"BaseFormID", "Installed.esp|001234"}, {"ReferenceID", 4660},
                       {"ExcludeBaseFormID", QJsonArray{}}, {"ExcludeReferenceID", "FF001234"},
@@ -329,9 +382,9 @@ void testTabPartitionAndNavigation() {
     QObject::connect(&form, &JsonForm::changed, [&changes] { ++changes; });
     auto* tabs = settingsTabs(form);
     const std::array<std::pair<QString, QStringList>, 4> sections{{
-        {"Models", {"Variants"}},
+        {"Basics", {"Title", "Variants"}},
         {"Targets", {"OriginalModel", "BaseFormID", "ReferenceID"}},
-        {"Conditions", {"ActiveTimeSpan", "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID"}},
+        {"Inclusions", {"ActiveTimeSpan", "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID"}},
         {"Exclusions", {"ExcludeBaseFormID", "ExcludeReferenceID", "ExcludeLocationID", "ExcludeRegionID",
                          "ExcludeKeywordID", "ExcludeCellID", "ExcludeWorldspaceID"}}
     }};
@@ -431,6 +484,7 @@ int main(int argc, char** argv) {
     try {
         testRoundTrip();
         testEdits();
+        testTitleEditing();
         testLegacyIDReplacement();
         testInvalidValuesCanBeRepaired();
         testConditionFields();

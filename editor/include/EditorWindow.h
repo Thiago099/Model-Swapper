@@ -28,9 +28,9 @@ protected:
 private:
     void buildUi();
     void scanFiles();
-    void chooseDirectory();
     void newFile();
     void renameFile();
+    void deleteFile();
     bool saveFile();
     bool confirmUnsavedChanges();
     bool reportFormErrors();
@@ -71,6 +71,7 @@ private:
     JsonForm* form_ = nullptr;
     QAction* saveAction_ = nullptr;
     QAction* renameAction_ = nullptr;
+    QAction* deleteAction_ = nullptr;
     QAction* addAction_ = nullptr;
     QAction* duplicateAction_ = nullptr;
     QAction* removeAction_ = nullptr;

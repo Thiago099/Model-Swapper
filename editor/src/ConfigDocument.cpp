@@ -224,6 +224,26 @@ namespace {
         const auto bytes = file.readAll();
         return file.error() == QFileDevice::NoError && bytes == expected;
     }
+
+    bool removeSingleFile(const QString& path, QString& error) {
+#ifdef Q_OS_WIN
+        // Use MO2's hooked deletion for the selected name. Never delete a
+        // resolved backing path or use a copy-and-delete fallback.
+        if (DeleteFileW(reinterpret_cast<LPCWSTR>(path.utf16()))) return true;
+        const auto code = GetLastError();
+        wchar_t message[1024]{};
+        const auto length = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                           nullptr, code, 0, message, 1024, nullptr);
+        error = length ? QString::fromWCharArray(message, static_cast<int>(length)).trimmed()
+                       : QStringLiteral("Windows error %1").arg(code);
+        return false;
+#else
+        QFile file(path);
+        if (file.remove()) return true;
+        error = file.errorString();
+        return false;
+#endif
+    }
 }
 
 namespace ConfigFiles {
@@ -535,6 +555,40 @@ namespace ConfigFiles {
 
     bool create(const QString& path, QByteArray& savedSource, QString& error) {
         return save(path, QJsonArray{}, QByteArray{}, savedSource, error, SaveMode::InPlace);
+    }
+
+    bool remove(const QString& path, const QByteArray& expectedSource, QString& error) {
+        error.clear();
+        if (path.isEmpty() || expectedSource.isNull()) {
+            error = QStringLiteral("Open the configuration before deleting it so its original contents can be verified.");
+            return false;
+        }
+        const auto source = absolutePath(path);
+        const QFileInfo selected(source);
+        if (!selected.isFile() || selected.isSymLink()) {
+            error = QStringLiteral("The selected configuration is missing or is not a regular file. Rescan before deleting it.");
+            return false;
+        }
+        QFile original(source);
+        if (!original.open(QIODevice::ReadOnly)) {
+            error = QStringLiteral("Cannot read the configuration before deleting: %1").arg(original.errorString());
+            return false;
+        }
+        if (!checkSource(original, expectedSource, error, QStringLiteral("deleting"))) return false;
+        // A lower-priority file may become visible at the virtual name after
+        // deletion. Verify the selected source, not that newly visible file.
+        const auto backing = backingFilePath(source);
+        original.close();
+        QString removeError;
+        if (!removeSingleFile(source, removeError)) {
+            error = QStringLiteral("Cannot delete the configuration: %1").arg(removeError);
+            return false;
+        }
+        if (pathExists(backing)) {
+            error = QStringLiteral("The selected configuration is still visible after deletion. Rescan and check the mod manager's file mapping before retrying.");
+            return false;
+        }
+        return true;
     }
 
     bool rename(const QString& oldPath, const QString& newPath, const QByteArray& expectedSource, QString& error) {

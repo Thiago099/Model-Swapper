@@ -408,6 +408,43 @@ namespace {
                 "A renamed new configuration must persist and reload its first entry normally");
     }
 
+    void testRemoving(const QString& root) {
+        const auto fixture = root + QStringLiteral("/removal");
+        require(QDir().mkpath(fixture), "Create an isolated file-deletion fixture directory");
+        const auto path = fixture + QStringLiteral("/Selected_MS.json");
+        const auto unrelated = fixture + QStringLiteral("/Unrelated_MS.json");
+        const QByteArray source("[\r\n  {\"Title\":\"Original\",\"Unknown\":true}\r\n]\r\n");
+        const QByteArray unrelatedSource("[ ]\n");
+        writeFile(path, source);
+        writeFile(unrelated, unrelatedSource);
+        QString error("previous error");
+        require(!ConfigFiles::remove(path, QByteArray{}, error) && !error.isEmpty() && readFile(path) == source,
+                "Deletion must require a loaded source snapshot and preserve an unverified file");
+        require(!ConfigFiles::remove(QString{}, source, error) && !error.isEmpty(),
+                "Deletion must refuse an empty path");
+        const QByteArray external("[\n]\n");
+        writeFile(path, external);
+        require(!ConfigFiles::remove(path, source, error) && error.contains(QStringLiteral("changed outside")),
+                "Deletion must refuse a configuration changed after loading");
+        require(readFile(path) == external && readFile(unrelated) == unrelatedSource,
+                "A deletion conflict must preserve the external edit and unrelated configurations");
+        writeFile(path, source);
+        error = "previous error";
+        require(ConfigFiles::remove(path, source, error) && error.isEmpty() && !QFile::exists(path),
+                "Deleting a verified configuration must remove exactly its selected name and clear prior errors");
+        require(readFile(unrelated) == unrelatedSource, "Successful deletion must leave unrelated files untouched");
+        require(!ConfigFiles::remove(path, source, error) && !error.isEmpty() && !QFile::exists(path),
+                "Deleting an already missing configuration must fail without recreating it");
+
+        const auto directory = fixture + QStringLiteral("/Directory_MS.json");
+        const auto child = directory + QStringLiteral("/Child_MS.json");
+        require(QDir().mkpath(directory), "Create a directory named like a configuration");
+        writeFile(child, source);
+        require(!ConfigFiles::remove(directory, source, error) && !error.isEmpty() &&
+                    QFileInfo(directory).isDir() && readFile(child) == source && readFile(unrelated) == unrelatedSource,
+                "Deletion must refuse directories and preserve every child and unrelated file");
+    }
+
     void testRenaming(const QString& root) {
         const auto oldPath = root + QStringLiteral("/BeforeRename_MS.json");
         const auto newPath = root + QStringLiteral("/AfterRename_MS.json");
@@ -469,6 +506,23 @@ namespace {
     }
 
 #if defined(Q_OS_WIN)
+    void testHardLinkedRemoval(const QString& root) {
+        const auto selected = root + QStringLiteral("/DeleteSelectedAlias_MS.json");
+        const auto retained = root + QStringLiteral("/DeleteRetainedAlias_MS.json");
+        const QByteArray source("[\r\n]\r\n");
+        writeFile(selected, source);
+        std::error_code linkError;
+        std::filesystem::create_hard_link(std::filesystem::path(selected.toStdWString()),
+                                          std::filesystem::path(retained.toStdWString()), linkError);
+        require(!linkError, "Create an isolated hard-linked deletion fixture");
+        QString error;
+        require(ConfigFiles::remove(selected, source, error) && error.isEmpty() && !QFile::exists(selected),
+                "Deleting a hard-linked configuration must remove the selected alias only");
+        require(readFile(retained) == source &&
+                    std::filesystem::hard_link_count(std::filesystem::path(retained.toStdWString())) == 1,
+                "Deleting one alias must preserve the other alias and its exact contents");
+    }
+
     void testCaseOnlyRename(const QString& root) {
         const auto oldPath = root + QStringLiteral("/CaseOriginal_MS.json");
         const auto newPath = root + QStringLiteral("/caseoriginal_MS.json");
@@ -573,8 +627,10 @@ int main(int argc, char** argv) {
         testRepeatedSaveSnapshots(directory.path());
         testInPlaceSaves(directory.path());
         testImmediateCreation(directory.path());
+        testRemoving(directory.path());
         testRenaming(directory.path());
 #if defined(Q_OS_WIN)
+        testHardLinkedRemoval(directory.path());
         testCaseOnlyRename(directory.path());
         testHardLinkedRename(directory.path());
         testHardLinkedSave(directory.path());

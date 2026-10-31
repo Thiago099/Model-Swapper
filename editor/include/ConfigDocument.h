@@ -39,4 +39,8 @@ namespace ConfigFiles {
     // Rename within the same directory only after confirming the loaded bytes.
     // The destination is never replaced, and success verifies the moved file.
     bool rename(const QString& oldPath, const QString& newPath, const QByteArray& expectedSource, QString& error);
+
+    // Permanently remove only the selected file after confirming its loaded
+    // bytes. A missing snapshot, changed file, or directory is never removed.
+    bool remove(const QString& path, const QByteArray& expectedSource, QString& error);
 }
