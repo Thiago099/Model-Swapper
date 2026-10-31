@@ -17,6 +17,7 @@ public:
         return singleton;
     }
     void Register(std::string key, variants value);
+    void Register(std::vector<std::string> keys, variants value);
     bool HasScopedRules() const { return hasScopedRules; }
     std::unique_ptr<AVObject> Swap(RE::TESBoundObject* base, RE::FormID id);
     std::unique_ptr<AVObject> Swap(RE::TESObjectARMA* base, RE::FormID id, RE::FormID baseFormID);

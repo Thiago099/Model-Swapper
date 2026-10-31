@@ -194,6 +194,121 @@ namespace {
         config->NowOverride = {};
     }
 
+    void TestIDOnlySelection() {
+        auto exact = MakeVariant("id-only-exact.nif", "id-only-exact.nif");
+        auto independent = MakeVariant("id-only-any-path.nif", "id-only-any-path.nif", 0xD000);
+        models choices{{"id-only-original.nif", {&exact}}, {"", {&independent}}};
+        const std::array<variant*, 2> expected{&exact, &independent};
+        for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+            std::mt19937 engine(ref);
+            std::uniform_int_distribution<std::uint32_t> distribution(0, 1);
+            Require(find(choices, "id-only-original.nif", ref, 0xD000) == expected[distribution(engine)],
+                "model-specific and ID-only rules share one eligible pool");
+            Require(find(choices, "id-only-original.nif", ref, 0xD001) == &exact,
+                "nonmatching ID-only rule leaves model-specific choice unchanged");
+        }
+        Require(find(choices, "unlisted-path.nif", 0xD002, 0xD000) == &independent,
+            "ID-only rule accepts an unlisted original model");
+        Require(find(choices, nullptr, 0xD002, 0xD000) == &independent,
+            "ID-only rule accepts a missing original model");
+        Require(find(choices, "", 0xD002, 0xD000) == &independent,
+            "ID-only rule accepts an empty original model");
+        independent.filter.referenceID = std::vector<std::uint32_t>{0xD002, 0xD003};
+        independent.filter.excludeReferenceID = std::vector<std::uint32_t>{0xD003};
+        Require(!find(choices, "unlisted-path.nif", 0xD003, 0xD000),
+            "ID-only rule preserves reference exclusions");
+        Require(!find(choices, "unlisted-path.nif", 0xD004, 0xD000),
+            "ID-only rule preserves reference inclusion");
+        independent.startDate = Time::fromDatePairString("01-01~31-01").first;
+        independent.endDate = Time::fromDatePairString("01-01~31-01").second;
+        auto config = Config::GetSingleton();
+        config->NowOverride = Time::fromString("2026-10-06 12:00:00");
+        Require(!find(choices, "unlisted-path.nif", 0xD002, 0xD000),
+            "ID-only rule preserves temporal inactivity");
+        config->BypassTemporalActivation = true;
+        Require(find(choices, "unlisted-path.nif", 0xD002, 0xD000) == &independent,
+            "ID-only rule respects temporal bypass");
+        Require(!find(choices, "unlisted-path.nif", 0xD003, 0xD000),
+            "temporal bypass does not bypass ID-only exclusions");
+        config->BypassTemporalActivation = false;
+        config->NowOverride = Time::fromString("2026-01-06 12:00:00");
+        Require(find(choices, "unlisted-path.nif", 0xD002, 0xD000) == &independent,
+            "ID-only rule preserves temporal activation");
+        config->NowOverride = {};
+    }
+
+    void TestMultipleOriginalRegistration() {
+        auto manager = Manager::GetSingleton();
+        static auto first = MakeVariant("multi-register-target-a.nif", "multi-register-target-a.nif", 0xD100);
+        static auto second = MakeVariant("multi-register-target-b.nif", "multi-register-target-b.nif", 0xD100);
+        manager->Register(std::vector<std::string>{"Meshes/Multi-Register-A.nif", "multi-register-b.nif",
+            "meshes\\MULTI-REGISTER-A.nif", "multi-register-target-a.nif"}, {&first, &second});
+        const std::array<const char*, 4> originals{"multi-register-a.nif", "multi-register-b.nif",
+            "multi-register-target-a.nif", "multi-register-target-b.nif"};
+        for (const auto original : originals) {
+            RE::TESBoundObject base;
+            base.formID = 0xD100;
+            base.SetModel(original);
+            for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+                std::mt19937 engine(ref);
+                std::uniform_int_distribution<std::uint32_t> distribution(0, 1);
+                const char* expected = distribution(engine) == 0 ? first.model : second.model;
+                auto selected = manager->Swap(&base, ref);
+                Require(std::string(base.GetModel()) == expected,
+                    "multiple originals, duplicate paths, and aliases do not duplicate variant weights");
+                selected->Reset();
+            }
+        }
+    }
+
+    void TestIDOnlyRestoration() {
+        auto manager = Manager::GetSingleton();
+        static auto rule = MakeVariant("id-only-restoration-target.nif", "id-only-restoration-target.nif", 0xD200, 0xD201);
+        manager->Register(std::vector<std::string>{}, {&rule});
+        Require(manager->HasScopedRules(), "ID-only registration enables scoped model loading");
+        RE::TESBoundObject base;
+        base.formID = 0xD200;
+        {
+            ModelSwapScope outer(0xD201);
+            outer.Add(manager->Swap(&base, 0xD201));
+            Require(std::string(base.GetModel()) == rule.model, "ID-only swap supplies a missing model");
+            {
+                ModelSwapScope inner(0xD202);
+                inner.Add(manager->Swap(&base, 0xD202));
+                Require(base.GetModel() == nullptr, "nested nonmatching reference sees missing baseline model");
+            }
+            Require(std::string(base.GetModel()) == rule.model, "nested return resumes ID-only replacement");
+        }
+        Require(base.GetModel() == nullptr, "ID-only scope restores missing original model");
+        base.SetModel("id-only-restoration-original.nif");
+        {
+            ModelSwapScope scope(0xD201);
+            scope.Add(manager->Swap(&base, 0xD201));
+            Require(std::string(base.GetModel()) == rule.model, "ID-only swap also accepts an existing model");
+        }
+        Require(std::string(base.GetModel()) == "id-only-restoration-original.nif",
+            "ID-only scope restores existing original model");
+
+        RE::TESObjectARMA armor;
+        armor.formID = 0xD299;
+        const std::array<const char*, 4> originals{"id-only-male3.nif", "id-only-female3.nif", "id-only-male1.nif", nullptr};
+        std::array<RE::TESModel*, 4> channels{&armor.bipedModels[0], &armor.bipedModels[1],
+            &armor.bipedModel1stPersons[0], &armor.bipedModel1stPersons[1]};
+        for (std::size_t i = 0; i < channels.size(); ++i) channels[i]->SetModel(originals[i]);
+        {
+            ModelSwapScope scope(0xD201);
+            scope.Add(manager->Swap(&armor, 0xD201, 0xD200));
+            for (auto channel : channels) {
+                Require(std::string(channel->GetModel()) == rule.model,
+                    "ID-only armor swap uses owning NPC base ID across all model channels");
+            }
+        }
+        for (std::size_t i = 0; i < channels.size(); ++i) {
+            Require(originals[i] ? std::string(channels[i]->GetModel()) == originals[i] : channels[i]->GetModel() == nullptr,
+                "ID-only armor scope restores every original model channel");
+        }
+    }
+
     void TestSharedBaseRestoration() {
         auto manager = Manager::GetSingleton();
         static RE::TESBoundObject base;
@@ -522,6 +637,83 @@ namespace {
         std::filesystem::current_path(previousDirectory);
     }
 
+    void TestOriginalModelLoading() {
+        const auto fixtureRoot = std::filesystem::path(__FILE__).parent_path().parent_path() / "build/tests/original-model-fixture";
+        std::filesystem::create_directories(fixtureRoot / "Data/SKSE/Plugins");
+        const auto previousDirectory = std::filesystem::current_path();
+        std::filesystem::current_path(fixtureRoot);
+        auto entries = json::parse(R"([
+            {"Variants":["loader-id-only-base-target.nif"],"BaseFormID":"D300"},
+            {"Variants":["loader-id-only-ref-target.nif"],"ReferenceID":"D301"},
+            {"Variants":["loader-id-only-both-target.nif"],"BaseFormID":"D302","ReferenceID":"D303"},
+            {"Variants":["loader-id-only-excluded-target.nif"],"BaseFormID":["D304","D305"],"ReferenceID":["D306","D307"],"ExcludeBaseFormID":"D305","ExcludeReferenceID":"D307"},
+            {"Variants":["loader-id-only-plugin-target.nif"],"BaseFormID":"Example.esp|D30A"},
+            {"Variants":["loader-id-only-empty-target.nif"],"BaseFormID":[]},
+            {"OriginalModel":["Meshes/Loader-Multi-A.nif","loader-multi-b.nif"],"Variants":["loader-multi-target.nif"],"BaseFormID":"D309"},
+            {"OriginalModel":["loader-multi-global-a.nif","loader-multi-global-b.nif"],"Variants":["loader-multi-global-target.nif"]},
+            {"OriginalModel":"loader-empty-alias-original.nif","Variants":["","Meshes/"]},
+            {"Variants":["loader-no-target.nif"]},
+            {"Variants":["loader-exclusion-only-target.nif"],"ExcludeReferenceID":"D3FF"},
+            {"Variants":["loader-invalid-id-only-target.nif"],"BaseFormID":["D30B","bogus"]},
+            {"OriginalModel":"loader-after-bad-original.nif","Variants":["loader-after-bad-original-target.nif"]}
+        ])");
+        const std::vector<json> invalidOriginals{nullptr, true, 12, json::object(), "", "Meshes/", json::array(),
+            json::array({"loader-invalid-original.nif", 12}),
+            json::array({"loader-invalid-original.nif", nullptr}),
+            json::array({"loader-invalid-original.nif", ""}),
+            json::array({"loader-invalid-original.nif", json::array({"nested.nif"})})};
+        for (const auto& original : invalidOriginals) {
+            entries.push_back(json{{"OriginalModel", original}, {"BaseFormID", "D400"},
+                {"Variants", json::array({"loader-invalid-original-target.nif"})}});
+        }
+        {
+            std::ofstream fixture("Data/originals_MS.json");
+            fixture << entries;
+        }
+        Persistence::Install();
+        const auto check = [](const char* original, std::uint32_t baseID, std::uint32_t refID, const char* expected) {
+            RE::TESBoundObject base;
+            base.formID = baseID;
+            base.SetModel(original);
+            {
+                ModelSwapScope scope(refID);
+                scope.Add(Manager::GetSingleton()->Swap(&base, refID));
+                Require(base.GetModel() && std::string(base.GetModel()) == expected,
+                    "loader accepts only matching valid optional/string/array model rules");
+            }
+            Require(original ? base.GetModel() && std::string(base.GetModel()) == original : base.GetModel() == nullptr,
+                "loaded optional model rule restores its original path");
+        };
+        check("arbitrary-base-original.nif", 0xD300, 0xD3FF, "loader-id-only-base-target.nif");
+        check("other-base-original.nif", 0xD300, 0xD3FE, "loader-id-only-base-target.nif");
+        check(nullptr, 0xD300, 0xD3FE, "loader-id-only-base-target.nif");
+        check("arbitrary-base-original.nif", 0xD3FF, 0xD3FE, "arbitrary-base-original.nif");
+        check("arbitrary-ref-original.nif", 0xD3FF, 0xD301, "loader-id-only-ref-target.nif");
+        check("arbitrary-ref-original.nif", 0xD3FE, 0xD301, "loader-id-only-ref-target.nif");
+        check("arbitrary-ref-original.nif", 0xD3FE, 0xD3FF, "arbitrary-ref-original.nif");
+        check("arbitrary-both-original.nif", 0xD302, 0xD303, "loader-id-only-both-target.nif");
+        check("arbitrary-both-original.nif", 0xD3FF, 0xD303, "arbitrary-both-original.nif");
+        check("arbitrary-both-original.nif", 0xD302, 0xD3FF, "arbitrary-both-original.nif");
+        check("arbitrary-excluded-original.nif", 0xD304, 0xD306, "loader-id-only-excluded-target.nif");
+        check("arbitrary-excluded-original.nif", 0xD305, 0xD306, "arbitrary-excluded-original.nif");
+        check("arbitrary-excluded-original.nif", 0xD304, 0xD307, "arbitrary-excluded-original.nif");
+        check("arbitrary-plugin-original.nif", 0x0100D30A, 0xD3FF, "loader-id-only-plugin-target.nif");
+        check("loader-multi-a.nif", 0xD309, 0xD3FF, "loader-multi-target.nif");
+        check("Meshes\\LOADER-MULTI-B.nif", 0xD309, 0xD3FF, "loader-multi-target.nif");
+        check("loader-multi-a.nif", 0xD3FF, 0xD3FF, "loader-multi-a.nif");
+        check("loader-multi-unlisted.nif", 0xD309, 0xD3FF, "loader-multi-unlisted.nif");
+        check("loader-multi-global-a.nif", 0xD3FF, 0xD3FF, "loader-multi-global-target.nif");
+        check("loader-multi-global-b.nif", 0xD3FF, 0xD3FF, "loader-multi-global-target.nif");
+        check("loader-invalid-original.nif", 0xD400, 0xD3FF, "loader-invalid-original.nif");
+        check("loader-invalid-original-target.nif", 0xD400, 0xD3FF, "loader-invalid-original-target.nif");
+        check("unlisted-invalid-original.nif", 0xD400, 0xD3FF, "unlisted-invalid-original.nif");
+        check("arbitrary-invalid-id-original.nif", 0xD30B, 0xD3FF, "arbitrary-invalid-id-original.nif");
+        check("unrelated-empty-alias.nif", 0xD500, 0xD501, "unrelated-empty-alias.nif");
+        check("loader-after-bad-original.nif", 0xD3FF, 0xD3FF, "loader-after-bad-original-target.nif");
+        std::filesystem::remove("Data/originals_MS.json");
+        std::filesystem::current_path(previousDirectory);
+    }
+
     void TestArmorRestoration() {
         static RE::TESObjectARMA armor;
         armor.formID = 0x789;
@@ -553,6 +745,7 @@ int main() {
     TestFilter();
     TestIDParsing();
     TestSelection();
+    TestIDOnlySelection();
     TestLegacyManagement();
     TestExclusionManagement();
     TestSharedBaseRestoration();
@@ -562,6 +755,9 @@ int main() {
     TestUnchangedModelPreservation();
     TestArmorRestoration();
     TestConfigLoading();
+    TestMultipleOriginalRegistration();
+    TestIDOnlyRestoration();
+    TestOriginalModelLoading();
     std::cout << "Passed " << checks << " regression checks.\n";
 }
 

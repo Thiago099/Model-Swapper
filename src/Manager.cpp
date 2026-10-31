@@ -1,29 +1,46 @@
 #include "Manager.h"
 
 void Manager::Register(std::string key, variants value) {
+    Register(std::vector<std::string>{std::move(key)}, std::move(value));
+}
+
+void Manager::Register(std::vector<std::string> keys, variants value) {
     if (value.empty()) {
         return;
     }
-    key = Str::processString(key);
 
     const bool scoped = value.front()->filter.IsScoped();
-    hasScopedRules = hasScopedRules || scoped;
 
-    auto it = sources.find(key);
-    if (it != sources.end()) {
-        it->second.insert(it->second.end(), value.begin(), value.end());
-    } else {
-        sources[key] = value;
+    if (keys.empty()) {
+        // The empty key holds ID-only rules, independent of the current path.
+        hasScopedRules = hasScopedRules || scoped;
+        auto& idVariants = sources[""];
+        idVariants.insert(idVariants.end(), value.begin(), value.end());
+        return;
+    }
+
+    std::set<std::string> originalKeys;
+    for (const auto& key : keys) {
+        auto normalized = Str::processString(key);
+        if (normalized.empty()) {
+            return;
+        }
+        originalKeys.insert(std::move(normalized));
+    }
+    hasScopedRules = hasScopedRules || scoped;
+    for (const auto& key : originalKeys) {
+        auto& originalVariants = sources[key];
+        originalVariants.insert(originalVariants.end(), value.begin(), value.end());
     }
 
     std::set<std::string> aliases;
     for (auto item : value) {
-        if (!aliases.insert(item->key).second) {
+        if (item->key[0] == '\0' || !aliases.insert(item->key).second) {
             continue;
         }
         auto& aliasVariants = sources[item->key];
         if (scoped) {
-            if (item->key != key) {
+            if (!originalKeys.contains(item->key)) {
                 aliasVariants.insert(aliasVariants.end(), value.begin(), value.end());
             }
         } else {

@@ -6,21 +6,18 @@
     ]
   },
   {
-    "OriginalModel": "Example\\BaseOriginal.nif",
     "Variants": [
       "Example\\BaseOnlyVariant.nif"
     ],
     "BaseFormID": "Example.esp|001234"
   },
   {
-    "OriginalModel": "Example\\ReferenceOriginal.nif",
     "Variants": [
       "Example\\ReferenceOnlyVariant.nif"
     ],
     "ReferenceID": "Example.esp|005678"
   },
   {
-    "OriginalModel": "Example\\CombinedOriginal.nif",
     "Variants": [
       "Example\\CombinedVariant.nif"
     ],
@@ -28,7 +25,7 @@
     "ReferenceID": "Example.esp|005678"
   },
   {
-    "OriginalModel": "Example\\ArrayOriginal.nif",
+    "OriginalModel": ["Example\\ArrayOriginal.nif", "Example\\OtherArrayOriginal.nif"],
     "Variants": [
       "Example\\ArrayVariant.nif"
     ],

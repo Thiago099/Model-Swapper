@@ -50,24 +50,13 @@ void Persistence::Install() {
             for (std::size_t i = 0; i < data.size(); ++i) {
                 const auto& item = data[i];
 
-                if (!item.contains("OriginalModel")) {
-                    logger::error("error processing item {} on file {} OriginalModel not found", i, filename);
-                    continue;
-                }
-
                 if (!item.contains("Variants")) {
                     logger::error("error processing item {} on file {} Variants not found", i, filename);
                     continue;
                 }
 
-                auto originalModel = item["OriginalModel"];
                 auto variants = item["Variants"];
 
-
-                if (!originalModel.is_string()) {
-                    logger::error("error processing item {} on file {} OriginalModel must be string", i, filename);
-                    continue;
-                }
                 if (!variants.is_array()) {
                     logger::error("error processing item {} on file {} Variants must be variants", i, filename);
                     continue;
@@ -102,8 +91,41 @@ void Persistence::Install() {
                     continue;
                 }
 
+                std::vector<std::string> originalModels;
+                if (auto original = item.find("OriginalModel"); original != item.end()) {
+                    const auto readModel = [&](const json& value) {
+                        if (!value.is_string()) {
+                            return false;
+                        }
+                        auto key = Str::processString(value.get<std::string>());
+                        if (key.empty()) {
+                            return false;
+                        }
+                        originalModels.push_back(std::move(key));
+                        return true;
+                    };
+                    bool valid = true;
+                    if (original->is_array()) {
+                        valid = !original->empty();
+                        for (const auto& model : *original) {
+                            if (!readModel(model)) {
+                                valid = false;
+                                break;
+                            }
+                        }
+                    } else {
+                        valid = readModel(*original);
+                    }
+                    if (!valid) {
+                        logger::error("error processing item {} on file {} OriginalModel must be a nonempty string or a nonempty array of nonempty strings", i, filename);
+                        continue;
+                    }
+                } else if (!filter.baseFormID && !filter.referenceID) {
+                    logger::error("error processing item {} on file {} OriginalModel, BaseFormID, or ReferenceID is required", i, filename);
+                    continue;
+                }
+
                 std::vector<variant*> models;
-                std::string model = Str::processString(originalModel.get<std::string>());
 
                 Time startDate, endDate;
 
@@ -134,7 +156,7 @@ void Persistence::Install() {
                     models.push_back(current);
 
                 }
-                manager->Register(model, models);
+                manager->Register(std::move(originalModels), std::move(models));
             }
 
         } else {

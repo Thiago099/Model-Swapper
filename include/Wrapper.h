@@ -25,21 +25,25 @@ public:
 };
 
 inline variant* find(const models& models, const char* str, uint32_t seed, RE::FormID baseFormID = 0) {
-    if (!str) {
-        return nullptr;
-    }
-    auto key = Str::processString(str);
-    auto it = models.find(key);
-    if (it != models.end()) {
-        variants eligible;
-        for (auto item : it->second) {
-            if (item->filter.Matches(baseFormID, seed)) {
-                eligible.push_back(item);
+    variants eligible;
+    const auto appendEligible = [&](const std::string& key) {
+        auto it = models.find(key);
+        if (it != models.end()) {
+            for (auto item : it->second) {
+                if (item->filter.Matches(baseFormID, seed)) {
+                    eligible.push_back(item);
+                }
             }
         }
-        if (eligible.empty()) {
-            return nullptr;
+    };
+    if (str) {
+        auto key = Str::processString(str);
+        if (!key.empty()) {
+            appendEligible(key);
         }
+    }
+    appendEligible("");
+    if (!eligible.empty()) {
         std::mt19937 engine(seed);
         std::uniform_int_distribution<uint32_t> dist(0, static_cast<uint32_t>(eligible.size() - 1));
         uint32_t random_number = dist(engine);
