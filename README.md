@@ -91,7 +91,7 @@ Select a file, then a swap entry. You can create configurations and add, duplica
 
 Each plugin/local ID has an editable dropdown populated with `.esm`, `.esp`, and `.esl` files in the Data folder, plus a separate hexadecimal Form ID input. Plugin names absent from the folder remain editable. Full runtime IDs can also be entered as hexadecimal strings or decimal numbers. The editor checks ID syntax and ranges; the game resolves load order, record existence, and ESP light-plugin flags when loading the configuration, with deferred cell handling as described above.
 
-Additional JSON properties have recursive forms for objects, lists, text, numbers, booleans, and null. Saving preserves these properties and the scalar/list forms of existing fields, and formats the file as indented JSON. Invalid configuration values produce errors before saving. Unsaved changes are protected when switching files or closing; saves also detect external file changes and replace the file atomically.
+Additional JSON properties have recursive forms for objects, lists, text, numbers, booleans, and null. Saving preserves these properties and the scalar/list forms of existing fields, and formats the file as indented JSON. Invalid configuration values produce errors before saving. Unsaved changes are protected when switching files or closing; saves also detect external file changes and verify the written contents before reporting success. When launched through Mod Organizer 2, the editor writes through its virtual filesystem mapping. Linked files are also updated in place; ordinary files use atomic replacement.
 
 The editor builds alongside the plugin, including when building the `ModelSwapper` target explicitly:
 

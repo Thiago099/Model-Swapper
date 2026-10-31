@@ -68,6 +68,17 @@ namespace {
         });
     }
 
+    void saveWithoutDialog(QAction* save) {
+        QTimer unexpectedDialog;
+        QObject::connect(&unexpectedDialog, &QTimer::timeout, [] {
+            require(QApplication::activeModalWidget() == nullptr, "saving an unchanged source must not show a dialog");
+        });
+        unexpectedDialog.start(1);
+        save->trigger();
+        QApplication::processEvents();
+        require(QApplication::activeModalWidget() == nullptr, "successful save leaves no modal dialog");
+    }
+
     void editCondition(EditorWindow& window, const QString& fieldName, const QString& id) {
         for (auto* included : window.findChildren<QCheckBox*>()) {
             if (included->text() != fieldName || !included->isChecked()) continue;
@@ -102,7 +113,9 @@ int main(int argc, char* argv[]) {
     require(temporary.isValid(), "create temporary Data folder");
     const auto firstPath = QDir(temporary.path()).filePath(QStringLiteral("A_MS.json"));
     const auto secondPath = QDir(temporary.path()).filePath(QStringLiteral("B_MS.json"));
-    writeFile(firstPath, document(QStringLiteral("First.nif")));
+    auto firstDocument = document(QStringLiteral("First.nif"));
+    firstDocument.replace("\n", "\r\n");
+    writeFile(firstPath, firstDocument);
     writeFile(secondPath, document(QStringLiteral("Second.nif")));
 
     EditorWindow window(temporary.path());
@@ -129,15 +142,33 @@ int main(int argc, char* argv[]) {
             "discard leaves original file unchanged");
 
     files->setCurrentRow(0);
+    auto expectedEntry = QJsonDocument::fromJson(document(QStringLiteral("First.nif"))).array().first().toObject();
     editCondition(window, QStringLiteral("LocationID"), QStringLiteral("234"));
     require(save->isEnabled(), "editing a condition marks the document dirty");
+    saveWithoutDialog(save);
+    expectedEntry.insert(QStringLiteral("LocationID"), QStringLiteral("Example.esp|234"));
+    require(!save->isEnabled() && files->currentRow() == 0 && entries->count() == 1,
+            "first direct save clears dirty state without reloading the entry");
+    require(QJsonDocument::fromJson(readFile(firstPath)).array() == QJsonArray{expectedEntry},
+            "first direct save writes the edited condition from the CRLF source");
+
+    editCondition(window, QStringLiteral("LocationID"), QStringLiteral("345"));
+    require(save->isEnabled(), "editing again after saving re-enables Save");
+    saveWithoutDialog(save);
+    expectedEntry.insert(QStringLiteral("LocationID"), QStringLiteral("Example.esp|345"));
+    require(!save->isEnabled() && files->currentRow() == 0 && entries->count() == 1,
+            "second direct save clears dirty state without switching or reloading the file");
+    require(QJsonDocument::fromJson(readFile(firstPath)).array() == QJsonArray{expectedEntry},
+            "second direct save writes the latest edit to the same loaded file");
+
+    editCondition(window, QStringLiteral("LocationID"), QStringLiteral("456"));
+    require(save->isEnabled(), "editing after repeated saves marks the document dirty");
     duplicate->trigger();
     answerNextDialog(QMessageBox::Save);
     files->setCurrentRow(1);
     require(files->currentRow() == 1 && !save->isEnabled(), "save switches to requested configuration");
     const auto savedEntries = QJsonDocument::fromJson(readFile(firstPath)).array();
-    auto expectedEntry = QJsonDocument::fromJson(document(QStringLiteral("First.nif"))).array().first().toObject();
-    expectedEntry.insert(QStringLiteral("LocationID"), QStringLiteral("Example.esp|234"));
+    expectedEntry.insert(QStringLiteral("LocationID"), QStringLiteral("Example.esp|456"));
     require(savedEntries == QJsonArray{expectedEntry, expectedEntry},
             "save and duplicate preserve edited conditions, all ID forms and unknown properties");
 

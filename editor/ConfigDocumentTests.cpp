@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 
@@ -197,6 +198,132 @@ namespace {
             require(accepts(entry), "Context conditions must work alongside existing ID-only targets");
         }
     }
+
+    void testRepeatedSaveSnapshots(const QString& root) {
+        const auto path = root + QStringLiteral("/RepeatedSave_MS.json");
+        writeFile(path, QJsonDocument(QJsonArray{validEntry()}).toJson(QJsonDocument::Compact));
+        QJsonArray entries;
+        QByteArray snapshot;
+        QString error;
+        require(ConfigFiles::load(path, entries, snapshot, error), "Repeated-save fixture must load");
+        for (int revision = 1; revision <= 3; ++revision) {
+            auto entry = entries.first().toObject();
+            entry.insert(QStringLiteral("Variants"), QJsonArray{QStringLiteral("Example\\Revision%1.nif").arg(revision)});
+            entry.insert(QStringLiteral("LocationID"), QStringLiteral("Example.esp|%1").arg(revision, 6, 16, QLatin1Char('0')));
+            entries[0] = entry;
+            QByteArray saved;
+            require(ConfigFiles::save(path, entries, snapshot, saved, error), "Successive edits to one loaded document must save");
+            require(saved == readFile(path), "Each successful save must return the exact bytes visible on disk");
+            require(QJsonDocument::fromJson(saved).array() == entries, "Every revision must actually replace the file's JSON contents");
+            snapshot = saved;
+        }
+        require(ConfigFiles::save(path, entries, snapshot, snapshot, error),
+                "Using the same source snapshot for input and output must remain safe");
+        require(snapshot == readFile(path), "An aliased source snapshot must track the final disk bytes");
+        const auto beforeConflict = snapshot;
+        const QByteArray external("[\n]\n");
+        writeFile(path, external);
+        require(!ConfigFiles::save(path, entries, snapshot, snapshot, error) && error.contains(QStringLiteral("changed outside")),
+                "Repeated saves must retain protection against a later external edit");
+        require(snapshot == beforeConflict && readFile(path) == external,
+                "A conflicting save must preserve both the source snapshot and external contents");
+        std::cout << "Repeated save snapshots passed\n";
+    }
+
+    void testInPlaceSaves(const QString& root) {
+        const auto path = root + QStringLiteral("/InPlace_MS.json");
+        QJsonArray entries{validEntry()};
+        QByteArray snapshot;
+        QString error;
+        require(ConfigFiles::save(path, entries, QByteArray(), snapshot, error, ConfigFiles::SaveMode::InPlace),
+                "In-place mode must create a new configuration exclusively");
+        require(snapshot == readFile(path), "New in-place files must return their visible disk bytes");
+        QByteArray unchangedOutput("unchanged output");
+        require(!ConfigFiles::save(path, entries, QByteArray(), unchangedOutput, error, ConfigFiles::SaveMode::InPlace),
+                "In-place new-file mode must never overwrite an existing configuration");
+        require(unchangedOutput == "unchanged output" && readFile(path) == snapshot,
+                "A rejected exclusive create must leave both output and file contents intact");
+
+        for (const int length : {16384, 3, 32768, 0}) {
+            auto entry = entries.first().toObject();
+            entry.insert(QStringLiteral("PreservedExtra"), QString(length, QLatin1Char('x')));
+            entries[0] = entry;
+            QByteArray saved;
+            require(ConfigFiles::save(path, entries, snapshot, saved, error, ConfigFiles::SaveMode::InPlace),
+                    "Successive in-place edits must support both growing and shrinking documents");
+            const auto diskBytes = readFile(path);
+            require(saved == diskBytes && diskBytes.size() == QJsonDocument(entries).toJson(QJsonDocument::Indented).size(),
+                    "In-place saves must write completely and truncate old trailing bytes");
+            require(QJsonDocument::fromJson(diskBytes).array() == entries,
+                    "Growing and shrinking in-place saves must preserve exactly the edited JSON");
+            snapshot = saved;
+        }
+        require(ConfigFiles::save(path, entries, snapshot, snapshot, error, ConfigFiles::SaveMode::InPlace) && snapshot == readFile(path),
+                "In-place saving must support the same input and output snapshot object");
+        const auto beforeConflict = snapshot;
+        const QByteArray external("[\n]\n");
+        writeFile(path, external);
+        require(!ConfigFiles::save(path, entries, snapshot, snapshot, error, ConfigFiles::SaveMode::InPlace) &&
+                error.contains(QStringLiteral("changed outside")), "In-place saves must reject a real external edit before writing");
+        require(snapshot == beforeConflict && readFile(path) == external,
+                "An in-place conflict must preserve the external edit and caller snapshot");
+
+        const auto missingPath = root + QStringLiteral("/DeletedBeforeInPlaceSave_MS.json");
+        writeFile(missingPath, beforeConflict);
+        require(QFile::remove(missingPath), "Deleted-file fixture must be removed before its next save");
+        unchangedOutput = "unchanged output";
+        require(!ConfigFiles::save(missingPath, entries, beforeConflict, unchangedOutput, error, ConfigFiles::SaveMode::InPlace),
+                "An existing-file in-place save must not silently recreate a deleted configuration");
+        require(!QFile::exists(missingPath) && unchangedOutput == "unchanged output",
+                "A missing original must leave the path missing and output snapshot unchanged");
+        std::cout << "In-place repeated saves passed\n";
+    }
+
+#if defined(Q_OS_WIN)
+    void testHardLinkedSave(const QString& root) {
+        const auto stagingPath = root + QStringLiteral("/Staging_MS.json");
+        const auto deployedPath = root + QStringLiteral("/Deployed_MS.json");
+        const auto nativeStaging = std::filesystem::path(stagingPath.toStdWString());
+        const auto nativeDeployed = std::filesystem::path(deployedPath.toStdWString());
+        writeFile(stagingPath, QJsonDocument(QJsonArray{validEntry()}).toJson(QJsonDocument::Compact));
+        std::error_code linkError;
+        std::filesystem::create_hard_link(nativeStaging, nativeDeployed, linkError);
+        if (linkError) std::cerr << "Cannot create hard-link fixture: " << linkError.message() << " (" << linkError.value() << ")\n";
+        require(!linkError, "Windows hard-link fixture must be created on the same volume");
+        require(std::filesystem::hard_link_count(nativeStaging) == 2, "Fixture paths must initially refer to the same file");
+        QJsonArray entries;
+        QByteArray snapshot;
+        QString error;
+        require(ConfigFiles::load(deployedPath, entries, snapshot, error), "Deployed hard-linked configuration must load");
+        auto entry = entries.first().toObject();
+        entry.insert(QStringLiteral("Variants"), QJsonArray{QStringLiteral("Example\\FirstLinkedRevision.nif")});
+        entries[0] = entry;
+        QByteArray firstSaved;
+        require(ConfigFiles::save(deployedPath, entries, snapshot, firstSaved, error), "Saving a deployed hard-linked file must succeed");
+        const bool deployedUpdated = readFile(deployedPath) == firstSaved;
+        const bool stagingUpdated = readFile(stagingPath) == firstSaved;
+        std::cout << "Hard-link first save: deployed updated=" << deployedUpdated
+                  << ", staging updated=" << stagingUpdated << '\n';
+        require(deployedUpdated && stagingUpdated, "Saving through one hard-link path must update both deployed and staging contents");
+        require(std::filesystem::hard_link_count(nativeDeployed) == 2,
+                "Saving a hard-linked configuration must preserve its deployment aliases");
+        snapshot = firstSaved;
+        entry.insert(QStringLiteral("Variants"), QJsonArray{QStringLiteral("Example\\SecondLinkedRevision.nif")});
+        entries[0] = entry;
+        QByteArray secondSaved;
+        require(ConfigFiles::save(stagingPath, entries, snapshot, secondSaved, error),
+                "A second edit through the other hard-link alias must save without a false conflict");
+        require(readFile(stagingPath) == secondSaved && readFile(deployedPath) == secondSaved,
+                "Successive hard-linked saves must stay visible through both aliases");
+        const QByteArray external("[\n]\n");
+        writeFile(stagingPath, external);
+        QByteArray rejectedSnapshot("unchanged output");
+        require(!ConfigFiles::save(deployedPath, entries, secondSaved, rejectedSnapshot, error) &&
+                error.contains(QStringLiteral("changed outside")), "External edits through an alias must still cause a conflict");
+        require(readFile(stagingPath) == external && readFile(deployedPath) == external && rejectedSnapshot == "unchanged output",
+                "Conflict handling must preserve external alias contents and the caller's saved snapshot");
+    }
+#endif
 }
 
 int main(int argc, char** argv) {
@@ -208,6 +335,11 @@ int main(int argc, char** argv) {
         testValidation();
         testConditionValidation();
         testLoadingAndSaving(directory.path());
+        testRepeatedSaveSnapshots(directory.path());
+        testInPlaceSaves(directory.path());
+#if defined(Q_OS_WIN)
+        testHardLinkedSave(directory.path());
+#endif
         std::cout << "ConfigDocument tests passed\n";
         return 0;
     } catch (const std::exception& error) {

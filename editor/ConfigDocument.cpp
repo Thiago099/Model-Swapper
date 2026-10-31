@@ -11,8 +11,13 @@
 #include <QRegularExpression>
 #include <QSaveFile>
 
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <limits>
 
 namespace {
@@ -98,6 +103,61 @@ namespace {
         const auto match = pattern.match(value.toString());
         return match.hasMatch() && QDate::isValid(2000, match.captured(2).toInt(), match.captured(1).toInt()) &&
                QDate::isValid(2000, match.captured(4).toInt(), match.captured(3).toInt());
+    }
+
+    bool preserveFileIdentity(const QString& path) {
+#ifdef Q_OS_WIN
+        // MO2 redirects existing-file opens. Replacing a temporary file can
+        // update a different backing file from the one read through its VFS.
+        if (GetModuleHandleW(L"usvfs_x64.dll") || GetModuleHandleW(L"usvfs_x86.dll")) {
+            return true;
+        }
+        const auto nativePath = std::filesystem::path(path.toStdWString());
+#else
+        const auto nativePath = std::filesystem::path(QFile::encodeName(path).constData());
+#endif
+        std::error_code error;
+        const auto links = std::filesystem::hard_link_count(nativePath, error);
+        return !error && links > 1;
+    }
+
+    bool checkSource(QFile& file, const QByteArray& expected, QString& error) {
+        const auto bytes = file.readAll();
+        if (file.error() != QFileDevice::NoError) {
+            error = QStringLiteral("Cannot read the configuration before saving: %1").arg(file.errorString());
+            return false;
+        }
+        if (bytes != expected) {
+            error = QStringLiteral("The file changed outside the editor. Reload it before saving to avoid overwriting those changes.");
+            return false;
+        }
+        return true;
+    }
+
+    bool writeInPlace(QFile& file, const QByteArray& bytes) {
+        // Do not truncate on open: compare the original bytes first, then
+        // shorten only after all replacement bytes have been written.
+        return file.seek(0) && file.write(bytes) == bytes.size() &&
+               file.resize(bytes.size()) && file.flush();
+    }
+
+    bool verifySavedFile(const QString& path, const QByteArray& expected, QString& error) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            error = QStringLiteral("Cannot verify the saved configuration: %1").arg(file.errorString());
+            return false;
+        }
+        const auto bytes = file.readAll();
+        if (file.error() != QFileDevice::NoError) {
+            error = QStringLiteral("Cannot read the saved configuration: %1").arg(file.errorString());
+            return false;
+        }
+        if (bytes != expected) {
+            error = QStringLiteral("The saved contents are not visible at %1. Your edits are still open; check the mod manager's file mapping before retrying.")
+                        .arg(QDir::toNativeSeparators(path));
+            return false;
+        }
+        return true;
     }
 }
 
@@ -220,13 +280,15 @@ namespace ConfigFiles {
     }
 
     bool save(const QString& path, const QJsonArray& entries, const QByteArray& expectedSource,
-              QByteArray& savedSource, QString& error) {
+              QByteArray& savedSource, QString& error, SaveMode mode) {
         error.clear();
         const auto errors = validate(entries);
         if (!errors.isEmpty()) {
             error = errors.join(QLatin1Char('\n'));
             return false;
         }
+        const auto bytes = QJsonDocument(entries).toJson(QJsonDocument::Indented);
+        const bool inPlace = mode == SaveMode::InPlace || preserveFileIdentity(path);
         QFile original(path);
         if (expectedSource.isNull()) {
             if (QFileInfo::exists(path)) {
@@ -234,31 +296,61 @@ namespace ConfigFiles {
                 return false;
             }
         } else {
-            if (!original.open(QIODevice::ReadOnly)) {
+            const auto openMode = inPlace ? QIODevice::ReadWrite | QIODevice::ExistingOnly : QIODevice::ReadOnly;
+            if (!original.open(openMode)) {
                 error = QStringLiteral("Cannot verify the original file: %1. Reload before saving.").arg(original.errorString());
                 return false;
             }
-            const auto currentSource = original.readAll();
-            if (original.error() != QFileDevice::NoError || currentSource != expectedSource) {
-                error = QStringLiteral("The file changed outside the editor. Reload it before saving to avoid overwriting those changes.");
+            if (!checkSource(original, expectedSource, error)) {
+                return false;
+            }
+        }
+
+        if (inPlace) {
+            const bool creating = expectedSource.isNull();
+            if (creating && !original.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+                error = QStringLiteral("Cannot create %1: %2").arg(QDir::toNativeSeparators(path), original.errorString());
+                return false;
+            }
+            if (!writeInPlace(original, bytes)) {
+                const auto writeError = original.errorString();
+                // Preserve the old snapshot on failure and restore the same
+                // open file where possible, without changing its mapping.
+                bool restored = false;
+                if (!creating) {
+                    original.unsetError();
+                    restored = writeInPlace(original, expectedSource);
+                }
+                original.close();
+                error = QStringLiteral("Cannot write the complete configuration: %1").arg(writeError);
+                if (creating && !original.remove()) {
+                    error += QStringLiteral(" The incomplete new file could not be removed: %1").arg(original.errorString());
+                }
+                if (!creating && !restored) {
+                    error += QStringLiteral(" The previous contents could not be restored; check the file before retrying.");
+                }
                 return false;
             }
             original.close();
+        } else {
+            original.close();
+            QSaveFile file(path);
+            file.setDirectWriteFallback(false);
+            if (!file.open(QIODevice::WriteOnly)) {
+                error = QStringLiteral("Cannot save %1: %2").arg(QDir::toNativeSeparators(path), file.errorString());
+                return false;
+            }
+            if (file.write(bytes) != bytes.size()) {
+                error = QStringLiteral("Cannot write the complete file: %1").arg(file.errorString());
+                file.cancelWriting();
+                return false;
+            }
+            if (!file.commit()) {
+                error = QStringLiteral("Cannot replace the file: %1").arg(file.errorString());
+                return false;
+            }
         }
-        const auto bytes = QJsonDocument(entries).toJson(QJsonDocument::Indented);
-        QSaveFile file(path);
-        file.setDirectWriteFallback(false);
-        if (!file.open(QIODevice::WriteOnly)) {
-            error = QStringLiteral("Cannot save %1: %2").arg(QDir::toNativeSeparators(path), file.errorString());
-            return false;
-        }
-        if (file.write(bytes) != bytes.size()) {
-            error = QStringLiteral("Cannot write the complete file: %1").arg(file.errorString());
-            file.cancelWriting();
-            return false;
-        }
-        if (!file.commit()) {
-            error = QStringLiteral("Cannot replace the file: %1").arg(file.errorString());
+        if (!verifySavedFile(path, bytes, error)) {
             return false;
         }
         savedSource = bytes;
