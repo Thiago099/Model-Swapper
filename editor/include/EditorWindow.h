@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ConfigDocument.h"
+
 #include <QByteArray>
 #include <QJsonArray>
 #include <QMainWindow>
@@ -32,7 +34,7 @@ private:
     bool saveFile();
     bool confirmUnsavedChanges();
     bool reportFormErrors();
-    bool openFile(const QString& path);
+    bool openFile(const QString& path, int selectedEntry = 0);
     void selectFile(QListWidgetItem* current, QListWidgetItem* previous);
     void populateFiles();
     void restoreFileSelection();
@@ -46,10 +48,12 @@ private:
     void clearDocument();
     void updateState();
     QString entryLabel(int row) const;
+    QString configurationLabel(const QString& path) const;
 
     QString dataDirectory_;
     QString currentPath_;
     QStringList discoveredFiles_;
+    QList<ConfigFiles::SourceDirectory> sourceDirectories_;
     QStringList plugins_;
     QJsonArray entries_;
     QByteArray originalSource_;

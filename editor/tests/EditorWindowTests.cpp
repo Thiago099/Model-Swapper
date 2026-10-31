@@ -4,6 +4,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -18,6 +19,8 @@
 #include <QLayout>
 #include <QMessageBox>
 #include <QPixmap>
+#include <QStatusBar>
+#include <QProcess>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -62,6 +65,19 @@ namespace {
         QFile file(path);
         require(file.open(QIODevice::ReadOnly), "open fixture for reading");
         return file.readAll();
+    }
+
+    void writeFromExternalProcess(const QString& path, const QByteArray& contents) {
+        QProcess writer;
+        writer.start(QCoreApplication::applicationFilePath(),
+                     {QStringLiteral("--write-external-fixture"), path, QString::fromLatin1(contents.toBase64())});
+        if (!writer.waitForFinished(10000)) {
+            writer.kill();
+            writer.waitForFinished(1000);
+            require(false, "external fixture writer must finish");
+        }
+        require(writer.exitStatus() == QProcess::NormalExit && writer.exitCode() == EXIT_SUCCESS,
+                "a separate process must create or rewrite the rescan fixture");
     }
 
     void answerNextDialog(QMessageBox::StandardButton response) {
@@ -165,9 +181,16 @@ namespace {
     void renderPreview(const QString& screenshotPath);
     void testFileActions();
     void testEntryLabels();
+    void testRescan();
 }
 
 int main(int argc, char* argv[]) {
+    if (argc == 4 && QByteArray(argv[1]) == "--write-external-fixture") {
+        QCoreApplication writer(argc, argv);
+        const auto arguments = writer.arguments();
+        writeFile(arguments.at(2), QByteArray::fromBase64(arguments.at(3).toLatin1()));
+        return EXIT_SUCCESS;
+    }
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication application(argc, argv);
     application.setQuitOnLastWindowClosed(false);
@@ -316,11 +339,139 @@ int main(int argc, char* argv[]) {
     require(window.close(), "discard permits window close");
     testFileActions();
     testEntryLabels();
+    testRescan();
     std::cout << "Editor window interaction tests passed.\n";
     return EXIT_SUCCESS;
 }
 
 namespace {
+    void testRescan() {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "create isolated rescan fixtures");
+        const QDir data(temporary.path());
+        const auto selectedPath = data.filePath(QStringLiteral("A_MS.json"));
+        const auto removedPath = data.filePath(QStringLiteral("B_MS.json"));
+        const auto addedPath = data.filePath(QStringLiteral("C_MS.json"));
+        const auto laterPath = data.filePath(QStringLiteral("D_MS.json"));
+        const auto removedPlugin = data.filePath(QStringLiteral("Initial.esp"));
+        writeFile(selectedPath, document(QStringLiteral("InitialA.nif")));
+        writeFile(removedPath, document(QStringLiteral("InitialB.nif")));
+        writeFile(removedPlugin, QByteArray());
+        EditorWindow window(temporary.path());
+        window.setAttribute(Qt::WA_DontShowOnScreen);
+        window.show();
+        QApplication::processEvents();
+        auto* files = window.findChild<QListWidget*>(QStringLiteral("configurationFiles"));
+        auto* entries = window.findChild<QListWidget*>(QStringLiteral("swapEntries"));
+        auto* rescan = window.findChild<QAction*>(QStringLiteral("rescanConfigurations"));
+        auto* save = window.findChild<QAction*>(QStringLiteral("saveConfiguration"));
+        auto* add = window.findChild<QAction*>(QStringLiteral("addEntry"));
+        auto* rename = window.findChild<QAction*>(QStringLiteral("renameConfiguration"));
+        auto* actions = window.findChild<QToolBar*>(QStringLiteral("fileActions"));
+        require(files && entries && rescan && save && add && rename && actions, "find rescan controls");
+        auto* rescanButton = qobject_cast<QAbstractButton*>(actions->widgetForAction(rescan));
+        require(rescanButton && rescanButton->isEnabled(), "Rescan must have an enabled button in the file toolbar");
+        const auto containsFile = [files](const QString& path) {
+            for (int row = 0; row < files->count(); ++row) {
+                if (files->item(row)->data(Qt::UserRole).toString() == path) return true;
+            }
+            return false;
+        };
+        const auto currentFile = [files] {
+            return files->currentItem() ? files->currentItem()->data(Qt::UserRole).toString() : QString();
+        };
+        require(files->count() == 2 && currentFile() == selectedPath && !save->isEnabled(),
+                "rescan fixture initially selects the first clean configuration");
+
+        auto refreshed = QJsonDocument::fromJson(document(QStringLiteral("ReloadedA.nif"))).array();
+        refreshed.append(QJsonDocument::fromJson(document(QStringLiteral("SecondReloaded.nif"))).array().first());
+        writeFromExternalProcess(selectedPath, QJsonDocument(refreshed).toJson());
+        rescanButton->click();
+        QApplication::processEvents();
+        require(currentFile() == selectedPath && entries->count() == 2 && entries->item(0)->text() == "1. ReloadedA.nif" &&
+                    entries->item(1)->text() == "2. SecondReloaded.nif" && !save->isEnabled(),
+                "clicking the toolbar Rescan button reloads externally edited entries without dirtying the document");
+        selectSettingsTab(window, QStringLiteral("Targets"));
+        bool refreshedForm = false;
+        for (auto* included : window.findChildren<QCheckBox*>()) {
+            if (included->text() == QStringLiteral("OriginalModel") && included->isChecked()) {
+                auto* input = included->parentWidget()->findChild<QLineEdit*>();
+                refreshedForm = input && input->text() == QStringLiteral("ReloadedA.nif");
+            }
+        }
+        require(refreshedForm, "rescan rebuilds the current entry form from the externally changed JSON");
+        entries->setCurrentRow(1);
+        selectSettingsTab(window, QStringLiteral("Targets"));
+        rescan->trigger();
+        require(entries->currentRow() == 1 &&
+                    window.findChild<QTabWidget*>(QStringLiteral("entryTabs"))->currentIndex() == 1,
+                "rescan retains the selected entry and settings tab in the current configuration");
+        entries->setCurrentRow(0);
+        editCondition(window, QStringLiteral("LocationID"), QStringLiteral("777"));
+        saveWithoutDialog(save);
+        auto refreshedFirst = refreshed.first().toObject();
+        refreshedFirst.insert(QStringLiteral("LocationID"), QStringLiteral("Example.esp|777"));
+        refreshed[0] = refreshedFirst;
+        require(QJsonDocument::fromJson(readFile(selectedPath)).array() == refreshed && !save->isEnabled(),
+                "saving after rescan uses the refreshed source baseline and preserves all reloaded entries");
+
+        writeFromExternalProcess(addedPath, document(QStringLiteral("AddedC.nif")));
+        writeFromExternalProcess(data.filePath(QStringLiteral("FreshPlugin.esp")), QByteArray());
+        require(QFile::remove(removedPath) && QFile::remove(removedPlugin), "remove external config and plugin fixtures before rescan");
+        rescan->trigger();
+        require(files->count() == 2 && currentFile() == selectedPath && containsFile(addedPath) && !containsFile(removedPath),
+                "rescan updates added and removed configuration filenames while retaining the selected existing file");
+        selectSettingsTab(window, QStringLiteral("Conditions"));
+        bool pluginDropdownRefreshed = false;
+        for (auto* included : window.findChildren<QCheckBox*>()) {
+            if (included->text() != QStringLiteral("LocationID")) continue;
+            for (auto* combo : included->parentWidget()->findChildren<QComboBox*>()) {
+                if (combo->accessibleName() == QStringLiteral("Plugin filename")) {
+                    pluginDropdownRefreshed = combo->findText(QStringLiteral("FreshPlugin.esp")) >= 0 &&
+                        combo->findText(QStringLiteral("Initial.esp")) < 0;
+                }
+            }
+        }
+        require(pluginDropdownRefreshed, "rescan refreshes installed-plugin dropdowns in the selected document");
+
+        const auto validSource = readFile(selectedPath);
+        writeFromExternalProcess(selectedPath, QByteArray("[invalid"));
+        answerNextDialog(QMessageBox::Ok);
+        rescan->trigger();
+        require(currentFile() == selectedPath && entries->count() == 2 && !save->isEnabled() &&
+                    window.statusBar()->currentMessage().contains(QStringLiteral("could not reload")),
+                "a failed rescan reload preserves the current document and reports failure instead of success");
+        writeFromExternalProcess(selectedPath, validSource);
+        rescan->trigger();
+        require(currentFile() == selectedPath && entries->count() == 2 && !save->isEnabled(),
+                "rescan recovers after the external configuration is repaired");
+
+        editCondition(window, QStringLiteral("LocationID"), QStringLiteral("888"));
+        writeFromExternalProcess(laterPath, document(QStringLiteral("AddedD.nif")));
+        answerNextDialog(QMessageBox::Cancel);
+        rescan->trigger();
+        require(save->isEnabled() && conditionInput(window, QStringLiteral("LocationID"))->text() == QStringLiteral("888") &&
+                    files->count() == 2 && !containsFile(laterPath),
+                "cancelling unsaved changes prevents rescan and retains pending edits and the current list");
+        answerNextDialog(QMessageBox::Discard);
+        rescan->trigger();
+        require(!save->isEnabled() && conditionInput(window, QStringLiteral("LocationID"))->text() == QStringLiteral("777") &&
+                    files->count() == 3 && containsFile(laterPath),
+                "discarding pending edits allows rescan to reload disk contents and discover new files");
+
+        require(QFile::remove(selectedPath), "delete selected configuration externally");
+        rescan->trigger();
+        require(files->count() == 2 && currentFile() == addedPath && entries->count() == 1 &&
+                    entries->item(0)->text() == "1. AddedC.nif" && !save->isEnabled(),
+                "rescan replaces a deleted selection with the first remaining configuration");
+        require(QFile::remove(addedPath) && QFile::remove(laterPath), "delete all remaining configuration fixtures");
+        rescan->trigger();
+        require(files->count() == 0 && entries->count() == 0 && currentFile().isEmpty() &&
+                    !save->isEnabled() && !add->isEnabled() && !rename->isEnabled(),
+                "rescan clears the document and disables file actions when every configuration is removed");
+        require(window.close(), "close the clean rescan fixture");
+    }
+
     void testEntryLabels() {
         QTemporaryDir temporary;
         require(temporary.isValid(), "create entry-label fixtures");

@@ -8,8 +8,10 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QMap>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QSet>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -19,8 +21,36 @@
 #include <cmath>
 #include <filesystem>
 #include <limits>
+#include <vector>
 
 namespace {
+    QString absolutePath(const QString& path) {
+        return QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+    }
+
+    QString pathKey(const QString& path) {
+        const auto normalized = absolutePath(path);
+#ifdef Q_OS_WIN
+        return normalized.toCaseFolded();
+#else
+        return normalized;
+#endif
+    }
+
+    bool isWithinDirectory(const QString& directory, const QString& path) {
+        const auto relative = QDir(directory).relativeFilePath(path);
+        return !QDir::isAbsolutePath(relative) && relative != QStringLiteral("..") &&
+               !relative.startsWith(QStringLiteral("../"));
+    }
+
+    bool virtualFilesystemLoaded() {
+#ifdef Q_OS_WIN
+        return GetModuleHandleW(L"usvfs_x64.dll") || GetModuleHandleW(L"usvfs_x86.dll");
+#else
+        return false;
+#endif
+    }
+
     void sortPaths(QStringList& paths) {
         std::sort(paths.begin(), paths.end(), [](const QString& left, const QString& right) {
             const auto order = QString::compare(left, right, Qt::CaseInsensitive);
@@ -197,7 +227,38 @@ namespace {
 }
 
 namespace ConfigFiles {
-    QStringList discoverFiles(const QString& dataDirectory, QString* error) {
+    QString backingFilePath(const QString& path) {
+#ifdef Q_OS_WIN
+        const auto handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), FILE_READ_ATTRIBUTES,
+                                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (handle != INVALID_HANDLE_VALUE) {
+            QString resolved;
+            const auto required = GetFinalPathNameByHandleW(handle, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+            if (required > 0 && required < static_cast<DWORD>(std::numeric_limits<int>::max())) {
+                std::vector<wchar_t> buffer(static_cast<std::size_t>(required) + 1);
+                const auto length = GetFinalPathNameByHandleW(handle, buffer.data(), static_cast<DWORD>(buffer.size()),
+                                                             FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+                if (length > 0 && length < buffer.size()) {
+                    resolved = QString::fromWCharArray(buffer.data(), static_cast<int>(length));
+                }
+            }
+            CloseHandle(handle);
+            if (!resolved.isEmpty()) {
+                if (resolved.startsWith(QStringLiteral("\\\\?\\UNC\\"), Qt::CaseInsensitive)) {
+                    resolved = QStringLiteral("\\\\") + resolved.mid(8);
+                } else if (resolved.startsWith(QStringLiteral("\\\\?\\"))) {
+                    resolved.remove(0, 4);
+                }
+                return QDir::cleanPath(QDir::fromNativeSeparators(resolved));
+            }
+        }
+#endif
+        const auto canonical = QFileInfo(path).canonicalFilePath();
+        return canonical.isEmpty() ? path : QDir::cleanPath(canonical);
+    }
+
+    QStringList discoverFiles(const QString& dataDirectory, QString* error, QList<SourceDirectory>* sourceDirectories) {
         if (error) {
             error->clear();
         }
@@ -208,8 +269,9 @@ namespace ConfigFiles {
             }
             return {};
         }
+        const auto dataPath = directory.absoluteFilePath();
         QStringList paths;
-        QDirIterator files(directory.absoluteFilePath(), QDir::Files | QDir::Hidden | QDir::NoSymLinks,
+        QDirIterator files(dataPath, QDir::Files | QDir::Hidden | QDir::NoSymLinks,
                            QDirIterator::Subdirectories);
         while (files.hasNext()) {
             const auto path = files.next();
@@ -218,7 +280,86 @@ namespace ConfigFiles {
             }
         }
         sortPaths(paths);
-        return paths;
+        if (!sourceDirectories) return paths;
+
+        QList<SourceDirectory> anchors;
+        QSet<QString> anchorKeys;
+        const auto addAnchor = [&](const SourceDirectory& source) {
+            if (source.sourcePath.isEmpty() || source.virtualPath.isEmpty()) return;
+            const SourceDirectory normalized{absolutePath(source.sourcePath), absolutePath(source.virtualPath)};
+            if (!isWithinDirectory(dataPath, normalized.virtualPath)) return;
+            const auto key = pathKey(normalized.sourcePath) + QLatin1Char('\n') + pathKey(normalized.virtualPath);
+            if (!anchorKeys.contains(key)) {
+                anchorKeys.insert(key);
+                anchors.append(normalized);
+            }
+        };
+        for (const auto& source : *sourceDirectories) addAnchor(source);
+
+        QSet<QString> virtualAliases;
+        QSet<QString> backingFiles;
+        QStringList uniquePaths;
+        const bool learnSources = virtualFilesystemLoaded();
+        for (const auto& path : paths) {
+            virtualAliases.insert(pathKey(path));
+            const auto backing = backingFilePath(path);
+            // USVFS can retain a directory entry after its source was removed.
+            // Keep its alias reserved without showing a file that cannot open.
+            if (!QFileInfo::exists(backing)) continue;
+            const auto backingKey = pathKey(backing);
+            if (learnSources && backingKey != pathKey(path)) {
+                addAnchor({QFileInfo(backing).absolutePath(), QFileInfo(path).absolutePath()});
+            }
+            if (!backingFiles.contains(backingKey)) {
+                backingFiles.insert(backingKey);
+                uniquePaths.append(path);
+            }
+        }
+        // Keep proven source anchors even when the last mapped file was renamed
+        // or removed. A later rescan can still find new files in that source.
+        *sourceDirectories = anchors;
+
+        struct Candidate {
+            QString path;
+            QString backingKey;
+            bool ambiguous = false;
+        };
+        QMap<QString, Candidate> candidates;
+        for (const auto& source : anchors) {
+            if (pathKey(source.sourcePath) == pathKey(source.virtualPath)) continue;
+            const QFileInfo sourceDirectory(source.sourcePath);
+            if (!sourceDirectory.isDir() || !sourceDirectory.isReadable()) continue;
+            const QDir sourceRoot(source.sourcePath);
+            const QDir virtualRoot(source.virtualPath);
+            QDirIterator sourceFiles(source.sourcePath, QDir::Files | QDir::Hidden | QDir::NoSymLinks,
+                                     QDirIterator::Subdirectories);
+            while (sourceFiles.hasNext()) {
+                const auto path = absolutePath(sourceFiles.next());
+                if (!sourceFiles.fileName().endsWith(QStringLiteral("_MS.json"), Qt::CaseInsensitive)) continue;
+                if (!isWithinDirectory(source.sourcePath, path)) continue;
+                const auto alias = absolutePath(virtualRoot.filePath(sourceRoot.relativeFilePath(path)));
+                const auto aliasKey = pathKey(alias);
+                // The active virtual view owns its existing filenames. Never
+                // expose an overridden source just because its bytes differ.
+                if (virtualAliases.contains(aliasKey)) continue;
+                const auto backingKey = pathKey(backingFilePath(path));
+                auto existing = candidates.find(aliasKey);
+                if (existing == candidates.end()) {
+                    candidates.insert(aliasKey, {path, backingKey});
+                } else if (existing->backingKey != backingKey) {
+                    // There is no known MO2 priority for a new alias exposed by
+                    // multiple source folders. Leave it out rather than guess.
+                    existing->ambiguous = true;
+                }
+            }
+        }
+        for (const auto& candidate : candidates) {
+            if (candidate.ambiguous || backingFiles.contains(candidate.backingKey)) continue;
+            backingFiles.insert(candidate.backingKey);
+            uniquePaths.append(candidate.path);
+        }
+        sortPaths(uniquePaths);
+        return uniquePaths;
     }
 
     QStringList discoverPlugins(const QString& dataDirectory) {

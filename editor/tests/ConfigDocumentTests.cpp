@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -64,6 +65,98 @@ namespace {
                 "Plugin discovery includes ESP/ESM/ESL in the Data root only");
         require(ConfigFiles::discoverFiles(root + QStringLiteral("/missing"), &error).isEmpty() && !error.isEmpty(),
                 "Unavailable Data directories must report an error");
+    }
+
+    void testSourceDirectoryRescan(const QString& root) {
+        const auto fixture = root + QStringLiteral("/source-rescan");
+        const auto data = fixture + QStringLiteral("/Data");
+        const auto source = fixture + QStringLiteral("/Known mod");
+        require(QDir().mkpath(data) && QDir().mkpath(source + QStringLiteral("/nested")), "Create isolated source-rescan directories");
+        const auto visible = data + QStringLiteral("/WoodCarts_MS.json");
+        const auto mappedSource = source + QStringLiteral("/WoodCarts_MS.json");
+        writeFile(visible, "[]");
+        writeFile(mappedSource, "[ ]");
+        QList<ConfigFiles::SourceDirectory> sources{{source, data}};
+        QString error;
+        require(ConfigFiles::discoverFiles(data, &error, &sources) == QStringList{visible} && error.isEmpty(),
+                "A source anchor must not duplicate an already visible virtual filename");
+
+        const auto external = source + QStringLiteral("/aaa_MS.json");
+        const auto nested = source + QStringLiteral("/nested/Seasonal_ms.JSON");
+        writeFile(external, "[]");
+        writeFile(nested, "[]");
+        writeFile(source + QStringLiteral("/ignored.json"), "[]");
+        const auto refreshed = ConfigFiles::discoverFiles(data, &error, &sources);
+        require(error.isEmpty() && refreshed.size() == 3 && refreshed.contains(visible) &&
+                    refreshed.contains(external) && refreshed.contains(nested),
+                "A second scan must discover externally added source files, including nested files");
+        require(ConfigFiles::discoverFiles(data) == QStringList{visible}, "The legacy discovery API must retain its original scope");
+        require(sources.size() == 1 && sources.first().sourcePath == source && sources.first().virtualPath == data,
+                "Rescanning must retain the known physical-to-virtual directory anchor");
+        require(readFile(visible) == "[]" && readFile(mappedSource) == "[ ]", "Discovery must never change virtual or source file contents");
+
+        require(QFile::remove(visible) && QFile::remove(mappedSource) && QFile::remove(external) && QFile::remove(nested),
+                "Remove all configuration fixtures while retaining their source directory");
+        require(ConfigFiles::discoverFiles(data, &error, &sources).isEmpty() && sources.size() == 1,
+                "Removing the last mapped configuration must not discard its source anchor");
+        const auto later = source + QStringLiteral("/Later_MS.json");
+        writeFile(later, "[]");
+        require(ConfigFiles::discoverFiles(data, &error, &sources) == QStringList{later},
+                "A retained source anchor must discover later additions without reopening the editor");
+
+        const auto actual = ConfigFiles::backingFilePath(later);
+#ifdef Q_OS_WIN
+        require(actual.compare(QFileInfo(later).canonicalFilePath(), Qt::CaseInsensitive) == 0,
+                "Backing file resolution must return the real normalized path for an existing file");
+#else
+        require(actual == QFileInfo(later).canonicalFilePath(), "Backing file resolution must return the canonical path");
+#endif
+        const auto missing = source + QStringLiteral("/Missing_MS.json");
+        require(ConfigFiles::backingFilePath(missing) == missing, "An unresolved backing file must retain its original path");
+        const auto otherData = fixture + QStringLiteral("/OtherData");
+        require(QDir().mkpath(otherData), "Create an unrelated Data directory");
+        require(ConfigFiles::discoverFiles(otherData, &error, &sources).isEmpty() && sources.isEmpty(),
+                "Source anchors must never expose files outside their selected virtual Data directory");
+    }
+
+    void testSourceDirectoryConflicts(const QString& root) {
+        const auto fixture = root + QStringLiteral("/source-conflicts");
+        const auto data = fixture + QStringLiteral("/Data");
+        const auto first = fixture + QStringLiteral("/FirstMod");
+        const auto second = fixture + QStringLiteral("/SecondMod");
+        require(QDir().mkpath(data) && QDir().mkpath(first + QStringLiteral("/nested")) && QDir().mkpath(second),
+                "Create isolated overlapping source-directory fixtures");
+        const auto visible = data + QStringLiteral("/Existing_MS.json");
+        writeFile(visible, "[]");
+        writeFile(first + QStringLiteral("/Existing_MS.json"), "[ ]");
+        writeFile(second + QStringLiteral("/Existing_MS.json"), "[\n]");
+        const auto ambiguousFirst = first + QStringLiteral("/UnknownPriority_MS.json");
+        const auto ambiguousSecond = second + QStringLiteral("/UnknownPriority_MS.json");
+        writeFile(ambiguousFirst, "[]");
+        writeFile(ambiguousSecond, "[]");
+        const auto uniqueFirst = first + QStringLiteral("/UniqueFirst_MS.json");
+        const auto uniqueSecond = second + QStringLiteral("/UniqueSecond_MS.json");
+        const auto nested = first + QStringLiteral("/nested/Nested_MS.json");
+        writeFile(uniqueFirst, "[]");
+        writeFile(uniqueSecond, "[]");
+        writeFile(nested, "[]");
+        QList<ConfigFiles::SourceDirectory> sources{{first, data}, {second, data}, {first, data},
+            {first + QStringLiteral("/nested"), data + QStringLiteral("/nested")}};
+        QString error;
+        const auto files = ConfigFiles::discoverFiles(data, &error, &sources);
+        require(error.isEmpty() && files.size() == 4 && files.contains(visible) && files.contains(uniqueFirst) &&
+                    files.contains(uniqueSecond) && files.contains(nested),
+                "Virtual filenames must win, unique source files must appear once, and ambiguous new aliases must be omitted");
+        require(!files.contains(ambiguousFirst) && !files.contains(ambiguousSecond),
+                "Discovery must never guess a mod priority for colliding new aliases");
+        require(sources.size() == 3, "Duplicate source anchors must not accumulate between rescans");
+        require(ConfigFiles::discoverFiles(data, &error, &sources) == files && sources.size() == 3,
+                "Repeated source discovery must be stable and free of duplicate files or anchors");
+        const auto nowVisible = data + QStringLiteral("/UniqueFirst_MS.json");
+        writeFile(nowVisible, "[]");
+        const auto afterMapping = ConfigFiles::discoverFiles(data, &error, &sources);
+        require(afterMapping.size() == 4 && afterMapping.contains(nowVisible) && !afterMapping.contains(uniqueFirst),
+                "A newly available virtual filename must take precedence over its physical fallback");
     }
 
     void testValidation() {
@@ -472,6 +565,8 @@ int main(int argc, char** argv) {
         QTemporaryDir directory;
         require(directory.isValid(), "Temporary directory must exist");
         testDiscovery(directory.path());
+        testSourceDirectoryRescan(directory.path());
+        testSourceDirectoryConflicts(directory.path());
         testValidation();
         testConditionValidation();
         testLoadingAndSaving(directory.path());

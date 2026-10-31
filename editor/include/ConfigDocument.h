@@ -2,12 +2,22 @@
 
 #include <QByteArray>
 #include <QJsonArray>
+#include <QList>
 #include <QStringList>
 
 namespace ConfigFiles {
     enum class SaveMode { Automatic, InPlace };
 
-    QStringList discoverFiles(const QString& dataDirectory, QString* error = nullptr);
+    struct SourceDirectory {
+        QString sourcePath;
+        QString virtualPath;
+    };
+
+    // Optional source anchors retain verified backing directories between
+    // rescans so externally created files are visible without remapping MO2.
+    QStringList discoverFiles(const QString& dataDirectory, QString* error = nullptr,
+                             QList<SourceDirectory>* sourceDirectories = nullptr);
+    QString backingFilePath(const QString& path);
     QStringList discoverPlugins(const QString& dataDirectory);
 
     // Loading permits invalid entry fields so that the editor can repair them.

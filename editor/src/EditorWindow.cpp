@@ -28,7 +28,16 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <algorithm>
+#include <utility>
+
 namespace {
+    bool containsPath(const QString& directory, const QString& path) {
+        const auto relative = QDir(directory).relativeFilePath(path);
+        return !QDir::isAbsolutePath(relative) && relative != QStringLiteral("..") &&
+               !relative.startsWith(QStringLiteral("../"));
+    }
+
     QJsonObject blankEntry() {
         return {{QStringLiteral("OriginalModel"), QString()},
                 {QStringLiteral("Variants"), QJsonArray{QString()}}};
@@ -204,24 +213,72 @@ void EditorWindow::scanFiles() {
     if (!confirmUnsavedChanges()) {
         return;
     }
+    const int selectedEntry = currentEntry_;
+    const auto selectedName = configurationLabel(currentPath_);
+    const bool selectedSource = !currentPath_.isEmpty() && !containsPath(dataDirectory_, currentPath_) &&
+        std::any_of(sourceDirectories_.cbegin(), sourceDirectories_.cend(), [this](const auto& source) {
+            return containsPath(source.sourcePath, currentPath_);
+        });
     QString error;
-    auto discovered = ConfigFiles::discoverFiles(dataDirectory_, &error);
+    auto sourceDirectories = sourceDirectories_;
+    auto discovered = ConfigFiles::discoverFiles(dataDirectory_, &error, &sourceDirectories);
     if (!error.isEmpty()) {
         QMessageBox::warning(this, tr("Cannot scan Data folder"), error);
         return;
     }
+    sourceDirectories_ = std::move(sourceDirectories);
     discoveredFiles_ = discovered;
     plugins_ = ConfigFiles::discoverPlugins(dataDirectory_);
     if (!currentPath_.isEmpty()) {
-        if (QFileInfo::exists(currentPath_)) {
-            openFile(currentPath_);
+        auto reloadPath = currentPath_;
+        if (!discoveredFiles_.contains(reloadPath)) {
+            const auto backingPath = ConfigFiles::backingFilePath(reloadPath);
+            bool found = false;
+            for (const auto& path : discoveredFiles_) {
+                if (ConfigFiles::backingFilePath(path).compare(backingPath, Qt::CaseInsensitive) == 0) {
+                    reloadPath = path;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found && selectedSource) {
+                reloadPath.clear();
+                for (const auto& path : discoveredFiles_) {
+                    if (configurationLabel(path).compare(selectedName, Qt::CaseInsensitive) == 0) {
+                        reloadPath = path;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!reloadPath.isEmpty() && QFileInfo::exists(reloadPath)) {
+            if (!openFile(reloadPath, selectedEntry)) {
+                if (selectedSource && !discoveredFiles_.contains(currentPath_)) {
+                    clearDocument();
+                }
+                populateFiles();
+                updateState();
+                statusBar()->showMessage(tr("Rescan found files, but could not reload the current configuration."));
+                return;
+            }
         } else {
             clearDocument();
         }
     }
     populateFiles();
     if (currentPath_.isEmpty() && !discoveredFiles_.isEmpty()) {
-        files_->setCurrentRow(0);
+        for (int row = 0; row < files_->count(); ++row) {
+            auto* item = files_->item(row);
+            if (!item->isHidden()) {
+                const bool opened = openFile(item->data(Qt::UserRole).toString());
+                restoreFileSelection();
+                if (!opened) {
+                    statusBar()->showMessage(tr("Rescan found files, but could not open the selected configuration."));
+                    return;
+                }
+                break;
+            }
+        }
     }
     statusBar()->showMessage(tr("Found %1 configuration file(s) and %2 plugin(s).")
                                  .arg(discoveredFiles_.size()).arg(plugins_.size()));
@@ -236,6 +293,7 @@ void EditorWindow::chooseDirectory() {
     clearDocument();
     dataDirectory_ = QDir(directory).absolutePath();
     discoveredFiles_.clear();
+    sourceDirectories_.clear();
     plugins_.clear();
     populateFiles();
     scanFiles();
@@ -248,8 +306,12 @@ void EditorWindow::populateFiles() {
     if (!currentPath_.isEmpty() && !paths.contains(currentPath_)) {
         paths.append(currentPath_);
     }
+    std::sort(paths.begin(), paths.end(), [this](const QString& left, const QString& right) {
+        const auto order = QString::compare(configurationLabel(left), configurationLabel(right), Qt::CaseInsensitive);
+        return order == 0 ? left < right : order < 0;
+    });
     for (const auto& path : paths) {
-        auto* item = new QListWidgetItem(QDir(dataDirectory_).relativeFilePath(path), files_);
+        auto* item = new QListWidgetItem(configurationLabel(path), files_);
         item->setData(Qt::UserRole, path);
         item->setToolTip(path);
         if (path == currentPath_) {
@@ -257,6 +319,19 @@ void EditorWindow::populateFiles() {
         }
     }
     filterFiles();
+}
+
+QString EditorWindow::configurationLabel(const QString& path) const {
+    if (containsPath(dataDirectory_, path)) {
+        return QDir(dataDirectory_).relativeFilePath(path);
+    }
+    for (const auto& source : sourceDirectories_) {
+        if (containsPath(source.sourcePath, path)) {
+            const auto relative = QDir(source.sourcePath).relativeFilePath(path);
+            return QDir(dataDirectory_).relativeFilePath(QDir(source.virtualPath).filePath(relative));
+        }
+    }
+    return QDir(dataDirectory_).relativeFilePath(path);
 }
 
 void EditorWindow::restoreFileSelection() {
@@ -294,7 +369,7 @@ void EditorWindow::selectFile(QListWidgetItem* current, QListWidgetItem*) {
     restoreFileSelection();
 }
 
-bool EditorWindow::openFile(const QString& path) {
+bool EditorWindow::openFile(const QString& path, int selectedEntry) {
     QJsonArray loaded;
     QByteArray source;
     QString error;
@@ -306,7 +381,7 @@ bool EditorWindow::openFile(const QString& path) {
     originalSource_ = source;
     currentPath_ = path;
     dirty_ = false;
-    populateEntries();
+    populateEntries(selectedEntry);
     updateState();
     return true;
 }
