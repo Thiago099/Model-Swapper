@@ -1,4 +1,5 @@
 #include "Persistence.h"
+#include "FilterContext.h"
 
 const std::string pattern = "_MS.json";
 const std::string directory = "Data/";
@@ -88,6 +89,23 @@ void Persistence::Install() {
                 }
                 if (!FormFilters::ReadIDs(item, "ExcludeReferenceID", filter.excludeReferenceID, resolve)) {
                     logger::error("error processing item {} on file {}: invalid or unresolved ExcludeReferenceID", i, filename);
+                    continue;
+                }
+
+                bool validContext = true;
+                for (const auto& field : FormFilters::ContextFields) {
+                    if (!FormFilters::ReadIDs(item, field.name, filter.*(field.member), resolve)) {
+                        logger::error("error processing item {} on file {}: invalid or unresolved {}", i, filename, field.name);
+                        validContext = false;
+                        break;
+                    }
+                }
+                if (!validContext) {
+                    continue;
+                }
+                std::string_view invalidField;
+                if (!FormFilters::ValidateContextIDs(filter, invalidField)) {
+                    logger::error("error processing item {} on file {}: {} must resolve to records of the matching type", i, filename, invalidField);
                     continue;
                 }
 

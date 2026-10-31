@@ -4,7 +4,7 @@ Model Swapper reads JSON files whose names end in `_MS.json` from the game's `Da
 
 `OriginalModel` accepts a model-path string or a nonempty array of model-path strings. An array matches any listed path. You can omit `OriginalModel` when `BaseFormID`, `ReferenceID`, or both are present; the IDs then select the models to replace. If you include `OriginalModel`, its paths provide an additional filter.
 
-Each entry can include `BaseFormID`, `ReferenceID`, `ExcludeBaseFormID`, and `ExcludeReferenceID`, directly beside the existing fields. Each accepts a single ID or an array of IDs:
+Each entry can include `BaseFormID`, `ReferenceID`, `ExcludeBaseFormID`, and `ExcludeReferenceID`, directly beside the existing fields. Context conditions add location, region, keyword, cell, and worldspace filters, described below. Every ID field accepts a single ID or an array of IDs:
 
 ```json
 [
@@ -33,14 +33,14 @@ For example, this entry replaces models for a specific base and reference withou
 
 - `BaseFormID` limits the entry to references with any listed base form. For NPC skin models, this is the owning NPC's base form ID, rather than the armor-addon's ID.
 - `ReferenceID` limits the entry to any listed placed or generated reference.
-- If both inclusion fields are present, each must match one of its IDs.
+- If both `BaseFormID` and `ReferenceID` are present, each must match one of its IDs.
 - `ExcludeBaseFormID` and `ExcludeReferenceID` reject the entry when either matches any listed ID, even if the inclusion fields match. They can also be used without inclusion fields.
-- Omitted fields impose no restriction. An empty inclusion array matches nothing; an empty exclusion array excludes nothing.
-- Without either inclusion field, `OriginalModel` is required, including for entries that use only exclusion fields. Empty paths, empty model arrays, and model arrays containing non-string values are invalid.
+- Omitted base/reference fields impose no restriction. An empty base/reference inclusion array matches nothing; an empty exclusion array excludes nothing.
+- Without `BaseFormID` or `ReferenceID`, `OriginalModel` is required, including for entries that use only context or exclusion fields. Empty paths, empty model arrays, and model arrays containing non-string values are invalid.
 
 When `OriginalModel` is present, the model path must match one of its paths. Matching entries contribute their variants to the eligible pool, including entries without ID restrictions. Exclusions affect only their own entry; other matching entries can still supply variants. Restricted entries do not have priority over unrestricted entries. Selection remains random, seeded by the reference ID, and `ActiveTimeSpan` keeps its existing behavior.
 
-All four ID fields accept these forms, either individually or as elements of a flat array. Arrays may mix these forms:
+All ID fields accept these forms, either individually or as elements of a flat array. Arrays may mix these forms:
 
 | Value | Meaning |
 | --- | --- |
@@ -51,11 +51,35 @@ All four ID fields accept these forms, either individually or as elements of a f
 
 IDs must be nonzero and fit within 32 bits. Plugin-local IDs must fit within 24 bits (`FFFFFF`) for regular plugins or 12 bits (`FFF`) for light plugins, including ESP files flagged as light. A numeric JSON value is decimal; a string ID is hexadecimal.
 
-Invalid or unresolved IDs, including any invalid array element, are logged and the entire entry is skipped. Other valid entries in the file continue loading.
+Invalid or unresolved IDs, including any invalid array element, are logged and the entire entry is skipped, with the deferred cell-loading exception described below. Other valid entries in the file continue loading.
 
 Prefer the plugin/local-ID format for installed plugins: raw full runtime IDs can change when the load order changes. Generated reference IDs are save-dependent.
 
 [TargetedSwaps_MS.json](examples/TargetedSwaps_MS.json) contains legacy, ID-only, model-array, ID-array, and exclusion examples. It is a template and is not loaded automatically from `examples`. Replace the placeholder plugin names, IDs, and model paths, then copy it into the game's `Data` folder. If you rename it, keep the `_MS.json` suffix.
+
+### Context conditions
+
+These optional fields use the same ID formats and scalar/array forms as the base and reference filters. They evaluate the object whose model is loading:
+
+| Include | Exclude | Matches |
+| --- | --- | --- |
+| `LocationID` | `ExcludeLocationID` | The reference's current location or an ancestor location. |
+| `RegionID` | `ExcludeRegionID` | A region assigned to the reference's parent cell, falling back to its saved parent cell. |
+| `KeywordID` | `ExcludeKeywordID` | A keyword on the reference/base object or its current location. |
+| `CellID` | `ExcludeCellID` | The exact parent cell, falling back to the saved parent cell. |
+| `WorldspaceID` | `ExcludeWorldspaceID` | The reference's current worldspace or its immediate parent worldspace. |
+
+All positive context fields form one **OR** group: any listed location, region, keyword, cell, or worldspace match satisfies that group. Any matching context exclusion rejects the entry. If all positive context fields are omitted, the group imposes no restriction; if positive fields are present but all their lists are empty, the group matches nothing. Empty exclusion arrays have no effect.
+
+Context conditions are additional to the existing model, base, reference, and date filters. For example, an entry with `BaseFormID`, `LocationID`, and `RegionID` requires the base form **and** either the location **or** the region. It still needs `OriginalModel`, `BaseFormID`, or `ReferenceID` to identify its target. Context filters do not change variant pooling, selection, or `ActiveTimeSpan` behavior.
+
+Location, region, keyword, and worldspace IDs must resolve to the corresponding record type when configurations load. Malformed IDs, unavailable plugins, unresolved records in these categories, or loaded records of the wrong type skip the entire entry with a log message. EditorIDs and BOS INI condition strings are not accepted.
+
+Skyrim can load cell records later. Syntactically valid `CellID` and `ExcludeCellID` values are retained even if their cell record is not available yet, then compared with the object's cell when its model loads. A cell ID that already resolves to another record type is rejected.
+
+Conditions are evaluated when the object's 3D loads. A context change does not immediately reload an already loaded model.
+
+[ContextFilters_MS.json](examples/ContextFilters_MS.json) contains one inclusion/exclusion example for each context type. All plugin names, IDs, and model paths are placeholders; replace them with your installed records before copying the file to `Data`.
 
 ## Qt6 configuration editor
 
@@ -63,9 +87,9 @@ Prefer the plugin/local-ID format for installed plugins: raw full runtime IDs ca
 
 The file list discovers all `_MS.json` files recursively. The plugin itself reads files directly inside `Data`; configurations in subfolders are shown for editing but must be moved to `Data` to be loaded by the plugin. The editor's filename search and discovery are case insensitive; use the exact `_MS.json` suffix when creating files for the plugin.
 
-Select a file, then a swap entry. You can create configurations and add, duplicate, or remove entries. The forms cover original models, replacement variants, all four inclusion/exclusion ID filters, and `ActiveTimeSpan` (`dd-MM~dd-MM`). Optional-field checkboxes control whether a property is saved. Original models and IDs support single values or lists, including empty ID lists.
+Select a file, then a swap entry. You can create configurations and add, duplicate, or remove entries. The forms cover original models, replacement variants, base, reference, location, region, keyword, cell, and worldspace inclusion/exclusion ID filters, and `ActiveTimeSpan` (`dd-MM~dd-MM`). Optional-field checkboxes control whether a property is saved. Original models and IDs support single values or lists, including empty ID lists. Context conditions have dedicated controls and use the matching rules above.
 
-Each plugin/local ID has an editable dropdown populated with `.esm`, `.esp`, and `.esl` files in the Data folder, plus a separate hexadecimal Form ID input. Plugin names absent from the folder remain editable. Full runtime IDs can also be entered as hexadecimal strings or decimal numbers. The editor checks ID syntax and ranges; the game resolves load order, record existence, and ESP light-plugin flags when loading the configuration.
+Each plugin/local ID has an editable dropdown populated with `.esm`, `.esp`, and `.esl` files in the Data folder, plus a separate hexadecimal Form ID input. Plugin names absent from the folder remain editable. Full runtime IDs can also be entered as hexadecimal strings or decimal numbers. The editor checks ID syntax and ranges; the game resolves load order, record existence, and ESP light-plugin flags when loading the configuration, with deferred cell handling as described above.
 
 Additional JSON properties have recursive forms for objects, lists, text, numbers, booleans, and null. Saving preserves these properties and the scalar/list forms of existing fields, and formats the file as indented JSON. Invalid configuration values produce errors before saving. Unsaved changes are protected when switching files or closing; saves also detect external file changes and replace the file atomically.
 

@@ -3,12 +3,14 @@
 #include <QAbstractButton>
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QListWidget>
+#include <QLineEdit>
 #include <QLayout>
 #include <QMessageBox>
 #include <QPixmap>
@@ -29,7 +31,18 @@ namespace {
     QByteArray document(const QString& original) {
         return QJsonDocument(QJsonArray{QJsonObject{
             {QStringLiteral("OriginalModel"), original},
-            {QStringLiteral("Variants"), QJsonArray{QStringLiteral("Replacement.nif")}}
+            {QStringLiteral("Variants"), QJsonArray{QStringLiteral("Replacement.nif")}},
+            {QStringLiteral("LocationID"), QStringLiteral("Example.esp|123")},
+            {QStringLiteral("RegionID"), QJsonArray{4660, QStringLiteral("Example.esp|456")}},
+            {QStringLiteral("KeywordID"), QStringLiteral("01001234")},
+            {QStringLiteral("CellID"), QJsonArray{}},
+            {QStringLiteral("WorldspaceID"), 4660},
+            {QStringLiteral("ExcludeLocationID"), QJsonArray{}},
+            {QStringLiteral("ExcludeRegionID"), QStringLiteral("Example.esp|789")},
+            {QStringLiteral("ExcludeKeywordID"), QJsonArray{QStringLiteral("Example.esp|ABC")}},
+            {QStringLiteral("ExcludeCellID"), QStringLiteral("0x01001234")},
+            {QStringLiteral("ExcludeWorldspaceID"), QJsonArray{4660}},
+            {QStringLiteral("Extension"), QJsonObject{{QStringLiteral("unchanged"), true}}}
         }}).toJson();
     }
 
@@ -53,6 +66,19 @@ namespace {
             require(button != nullptr, "expected dialog response is available");
             button->click();
         });
+    }
+
+    void editCondition(EditorWindow& window, const QString& fieldName, const QString& id) {
+        for (auto* included : window.findChildren<QCheckBox*>()) {
+            if (included->text() != fieldName || !included->isChecked()) continue;
+            for (auto* text : included->parentWidget()->findChildren<QLineEdit*>()) {
+                if (text->accessibleName() == QStringLiteral("Form ID")) {
+                    text->setText(id);
+                    return;
+                }
+            }
+        }
+        require(false, "find dedicated condition input in the active entry form");
     }
 
     void renderPreview(const QString& screenshotPath);
@@ -103,12 +129,17 @@ int main(int argc, char* argv[]) {
             "discard leaves original file unchanged");
 
     files->setCurrentRow(0);
+    editCondition(window, QStringLiteral("LocationID"), QStringLiteral("234"));
+    require(save->isEnabled(), "editing a condition marks the document dirty");
     duplicate->trigger();
     answerNextDialog(QMessageBox::Save);
     files->setCurrentRow(1);
     require(files->currentRow() == 1 && !save->isEnabled(), "save switches to requested configuration");
-    require(QJsonDocument::fromJson(readFile(firstPath)).array().size() == 2,
-            "save before switching writes edited entries");
+    const auto savedEntries = QJsonDocument::fromJson(readFile(firstPath)).array();
+    auto expectedEntry = QJsonDocument::fromJson(document(QStringLiteral("First.nif"))).array().first().toObject();
+    expectedEntry.insert(QStringLiteral("LocationID"), QStringLiteral("Example.esp|234"));
+    require(savedEntries == QJsonArray{expectedEntry, expectedEntry},
+            "save and duplicate preserve edited conditions, all ID forms and unknown properties");
 
     files->setCurrentRow(0);
     duplicate->trigger();
@@ -145,6 +176,8 @@ namespace {
             {QStringLiteral("ReferenceID"), QStringLiteral("Example.esp|005678")},
             {QStringLiteral("ExcludeBaseFormID"), QStringLiteral("Example.esp|001235")},
             {QStringLiteral("ExcludeReferenceID"), QJsonArray{QStringLiteral("Example.esp|005679")}},
+            {QStringLiteral("LocationID"), QStringLiteral("Skyrim.esm|00018A45")},
+            {QStringLiteral("ExcludeCellID"), QJsonArray{QStringLiteral("Example.esp|001ABC")}},
             {QStringLiteral("ActiveTimeSpan"), QStringLiteral("01-06~30-09")}
         };
         writeFile(QDir(previewDirectory.path()).filePath(QStringLiteral("SeasonalSwaps_MS.json")),

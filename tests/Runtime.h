@@ -34,6 +34,8 @@ namespace logger {
 namespace RE {
     using FormID = std::uint32_t;
 
+    enum class FormType { None, Location, Region, Keyword, Cell, WorldSpace, BoundObject, ArmorAddon, Reference };
+
     class BSFixedString {
         std::optional<std::string> value;
     public:
@@ -57,13 +59,101 @@ namespace RE {
 
     class TESForm {
     public:
+        static inline std::map<FormID, TESForm*> registeredForms;
         FormID formID = 0;
+        FormType formType = FormType::None;
         virtual ~TESForm() = default;
         FormID GetFormID() const { return formID; }
+        FormType GetFormType() const { return formType; }
         template <class T> T* As() { return dynamic_cast<T*>(this); }
+        template <class T> const T* As() const { return dynamic_cast<const T*>(this); }
+        static TESForm* LookupByID(FormID id) {
+            const auto found = registeredForms.find(id);
+            return found == registeredForms.end() ? nullptr : found->second;
+        }
+        template <class T> static T* LookupByID(FormID id) { return dynamic_cast<T*>(LookupByID(id)); }
+        static void Register(TESForm& form, FormID id) {
+            form.formID = id;
+            registeredForms[id] = &form;
+        }
     };
 
-    class TESBoundObject : public TESForm, public TESModel {};
+    class BGSKeyword : public TESForm {
+    public:
+        BGSKeyword() { formType = FormType::Keyword; }
+    };
+
+    class BGSKeywordForm {
+    public:
+        std::vector<BGSKeyword*> keywords;
+        virtual ~BGSKeywordForm() = default;
+        bool HasKeyword(const BGSKeyword* keyword) const {
+            return keyword && std::find(keywords.begin(), keywords.end(), keyword) != keywords.end();
+        }
+        bool HasKeywordID(FormID id) const {
+            return std::any_of(keywords.begin(), keywords.end(), [id](const auto* keyword) {
+                return keyword && keyword->GetFormID() == id;
+            });
+        }
+        const std::vector<BGSKeyword*>& GetKeywords() const { return keywords; }
+    };
+
+    class TESBoundObject : public TESForm, public TESModel, public BGSKeywordForm {
+    public:
+        TESBoundObject() { formType = FormType::BoundObject; }
+    };
+
+    class BGSLocation : public TESForm, public BGSKeywordForm {
+    public:
+        BGSLocation* parentLoc = nullptr;
+        BGSLocation() { formType = FormType::Location; }
+        bool IsParent(const BGSLocation* possibleParent) const {
+            for (const auto* current = parentLoc; current; current = current->parentLoc) {
+                if (current == possibleParent) return true;
+            }
+            return false;
+        }
+    };
+
+    class TESRegion : public TESForm {
+    public:
+        TESRegion() { formType = FormType::Region; }
+    };
+
+    using TESRegionList = std::vector<TESRegion*>;
+
+    class TESObjectCELL : public TESForm {
+    public:
+        TESRegionList* regionList = nullptr;
+        TESObjectCELL() { formType = FormType::Cell; }
+        TESRegionList* GetRegionList(bool) const { return regionList; }
+    };
+
+    class TESWorldSpace : public TESForm {
+    public:
+        TESWorldSpace* parentWorld = nullptr;
+        TESWorldSpace() { formType = FormType::WorldSpace; }
+    };
+
+    class TESObjectREFR : public TESForm {
+    public:
+        TESBoundObject* base = nullptr;
+        TESObjectCELL* parentCell = nullptr;
+        TESObjectCELL* saveParentCell = nullptr;
+        TESWorldSpace* worldspace = nullptr;
+        BGSLocation* location = nullptr;
+        std::vector<BGSKeyword*> referenceKeywords;
+        TESObjectREFR() { formType = FormType::Reference; }
+        TESBoundObject* GetBaseObject() const { return base; }
+        TESObjectCELL* GetParentCell() const { return parentCell; }
+        TESObjectCELL* GetSaveParentCell() const { return saveParentCell; }
+        TESWorldSpace* GetWorldspace() const { return worldspace; }
+        BGSLocation* GetCurrentLocation() const { return location; }
+        bool HasKeyword(const BGSKeyword* keyword) const {
+            return (base && base->HasKeyword(keyword)) ||
+                (keyword && std::find(referenceKeywords.begin(), referenceKeywords.end(), keyword) != referenceKeywords.end());
+        }
+    };
 
     namespace SEXES {
         constexpr std::size_t kMale = 0;
@@ -72,6 +162,7 @@ namespace RE {
 
     class TESObjectARMA : public TESForm {
     public:
+        TESObjectARMA() { formType = FormType::ArmorAddon; }
         TESModel bipedModels[2];
         TESModel bipedModel1stPersons[2];
     };

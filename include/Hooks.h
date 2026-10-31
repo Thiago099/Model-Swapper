@@ -1,6 +1,7 @@
 #pragma once
 #include "HookBuilder.h"
 #include "Manager.h"
+#include "FilterContext.h"
 #include <windows.h>
 #include <dbghelp.h>
 #include <iostream>
@@ -45,7 +46,7 @@ namespace Hooks {
         static inline REL::Relocation<bool(RE::TESObjectREFR*)>originalFunction;
         static inline REL::Relocation<RE::NiAVObject*(RE::TESObjectREFR*, bool)> originalLoad3D;
         static bool ShouldBackgroundClone(RE::TESObjectREFR* ref) {
-            // Keep the original hook behavior for configurations without ID filters.
+            // Keep the original hook behavior for configurations without scoped filters.
             if (ref && !Manager::GetSingleton()->HasScopedRules()) {
                 if (auto base = ref->GetBaseObject()) {
                     auto manager = Manager::GetSingleton();
@@ -62,8 +63,12 @@ namespace Hooks {
 
             std::lock_guard<std::recursive_mutex> lock(modelLoadMutex);
             ModelSwapScope scope(ref->GetFormID());
+            std::optional<FormFilterContext> context;
+            if (manager->HasContextRules()) {
+                context = FormFilters::CaptureContext(ref);
+            }
             if (auto base = ref->GetBaseObject()) {
-                scope.Add(manager->Swap(base, ref->GetFormID()));
+                scope.Add(manager->Swap(base, ref->GetFormID(), context ? &*context : nullptr));
             }
             return originalLoad3D(ref, backgroundLoading);
         }
@@ -116,6 +121,10 @@ namespace Hooks {
 
             std::lock_guard<std::recursive_mutex> lock(modelLoadMutex);
             ModelSwapScope scope(ref->GetFormID());
+            std::optional<FormFilterContext> context;
+            if (manager->HasContextRules()) {
+                context = FormFilters::CaptureContext(ref);
+            }
             if (auto obj = ref->GetBaseObject()) {
                 if (auto npc = obj->As<RE::TESNPC>()) {
                     std::set<RE::TESObjectARMA*> addons;
@@ -125,7 +134,7 @@ namespace Hooks {
                         }
                         for (auto addon : skin->armorAddons) {
                             if (addon && addons.insert(addon).second) {
-                                scope.Add(manager->Swap(addon, ref->GetFormID(), npc->GetFormID()));
+                                scope.Add(manager->Swap(addon, ref->GetFormID(), npc->GetFormID(), context ? &*context : nullptr));
                             }
                         }
                     };

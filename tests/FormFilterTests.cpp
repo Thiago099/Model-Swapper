@@ -1,4 +1,5 @@
 #include "FormFilter.h"
+#include "FilterContext.h"
 #include "Manager.h"
 #include "Persistence.h"
 
@@ -121,7 +122,10 @@ namespace {
             if (plugin == "Light.esl" && local <= 0xFFF) return 0xFE001000 | local;
             return 0u;
         };
-        const std::array<const char*, 4> fields{"BaseFormID", "ReferenceID", "ExcludeBaseFormID", "ExcludeReferenceID"};
+        const std::array<const char*, 14> fields{
+            "BaseFormID", "ReferenceID", "ExcludeBaseFormID", "ExcludeReferenceID",
+            "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID",
+            "ExcludeLocationID", "ExcludeRegionID", "ExcludeKeywordID", "ExcludeCellID", "ExcludeWorldspaceID"};
         for (const auto field : fields) {
             Require(FormFilters::ReadIDs(json{{field, "0x123"}}, field, parsed) &&
                 parsed == std::vector<std::uint32_t>{0x123}, "every filter field accepts a scalar string");
@@ -145,6 +149,184 @@ namespace {
                     "invalid or unresolved ID anywhere in a filter rejects whole entry");
             }
         }
+    }
+
+    void TestContextFilters() {
+        using Member = FormFilter::IDs FormFilter::*;
+        struct ContextCase {
+            Member include;
+            Member exclude;
+            std::function<void(FormFilterContext&, std::uint32_t)> populate;
+        };
+        const std::array<ContextCase, 5> cases{{
+            {&FormFilter::locationID, &FormFilter::excludeLocationID,
+                [](auto& context, auto id) { context.locations = {id}; }},
+            {&FormFilter::regionID, &FormFilter::excludeRegionID,
+                [](auto& context, auto id) { context.regions = {id}; }},
+            {&FormFilter::keywordID, &FormFilter::excludeKeywordID,
+                [](auto& context, auto id) { context.hasKeyword = [id](auto candidate) { return candidate == id; }; }},
+            {&FormFilter::cellID, &FormFilter::excludeCellID,
+                [](auto& context, auto id) { context.cellID = id; }},
+            {&FormFilter::worldspaceID, &FormFilter::excludeWorldspaceID,
+                [](auto& context, auto id) { context.worldspaces = {id}; }}
+        }};
+        for (const auto& test : cases) {
+            FormFilter filter;
+            FormFilterContext matching, other, empty;
+            test.populate(matching, 0xE001);
+            test.populate(other, 0xE002);
+            filter.*test.include = std::vector<std::uint32_t>{0xE000, 0xE001};
+            Require(filter.HasContextFilters() && filter.IsScoped(), "context inclusion enables scoped matching");
+            Require(filter.Matches(1, 2, &matching), "each context filter accepts any matching ID in its array");
+            Require(!filter.Matches(1, 2, &other), "each context filter rejects unrelated context");
+            Require(!filter.Matches(1, 2, &empty), "each context inclusion rejects a missing context fact");
+            Require(!filter.Matches(1, 2), "context inclusion is never silently ignored without reference context");
+            filter.*test.exclude = std::vector<std::uint32_t>{0xE001};
+            Require(!filter.Matches(1, 2, &matching), "each context exclusion overrides a positive match");
+            (filter.*test.include).reset();
+            Require(!filter.Matches(1, 2, &matching), "each exclusion works without a context inclusion");
+            Require(filter.Matches(1, 2, &other), "each exclusion permits nonmatching contexts");
+            Require(filter.Matches(1, 2, &empty), "missing contextual facts do not spuriously match exclusions");
+            Require(!filter.Matches(1, 2), "context exclusions fail closed when no reference context is supplied");
+            filter.*test.exclude = std::vector<std::uint32_t>{};
+            Require(!filter.HasContextFilters() && !filter.IsScoped(), "empty contextual exclusions impose no scope");
+            Require(filter.Matches(1, 2), "empty contextual exclusions retain legacy matching");
+            filter.*test.include = std::vector<std::uint32_t>{};
+            Require(filter.HasContextFilters() && filter.IsScoped(), "empty contextual inclusion remains an active restriction");
+            Require(!filter.Matches(1, 2, &matching), "empty contextual inclusion matches nothing");
+        }
+
+        FormFilter combined;
+        combined.locationID = std::vector<std::uint32_t>{0xE100};
+        combined.regionID = std::vector<std::uint32_t>{0xE200};
+        FormFilterContext context;
+        context.regions = {0xE200};
+        Require(combined.Matches(1, 2, &context), "different positive context categories use BOS any-match logic");
+        context.regions.clear();
+        context.locations = {0xE100};
+        Require(combined.Matches(1, 2, &context), "a location alone can satisfy mixed positive conditions");
+        context.locations.clear();
+        Require(!combined.Matches(1, 2, &context), "mixed positive conditions reject when none match");
+        context.regions = {0xE100};
+        Require(!combined.Matches(1, 2, &context), "an ID in the wrong context category cannot satisfy a condition");
+        context.regions = {0xE200};
+        combined.locationID = std::vector<std::uint32_t>{};
+        Require(combined.Matches(1, 2, &context), "an empty category does not suppress another positive context match");
+        combined.baseFormID = std::vector<std::uint32_t>{0x123};
+        combined.referenceID = std::vector<std::uint32_t>{0x456};
+        Require(combined.Matches(0x123, 0x456, &context), "context conditions combine with existing base and reference gates");
+        Require(!combined.Matches(0x124, 0x456, &context), "context match cannot bypass an existing base inclusion");
+        Require(!combined.Matches(0x123, 0x457, &context), "context match cannot bypass an existing reference inclusion");
+        combined.excludeCellID = std::vector<std::uint32_t>{0xE300};
+        context.cellID = 0xE300;
+        Require(!combined.Matches(0x123, 0x456, &context), "an exclusion in another context category vetoes positive matches");
+    }
+
+    void TestContextCapture() {
+        static RE::TESBoundObject base;
+        static RE::BGSKeyword baseKeyword, locationKeyword, referenceKeyword, parentOnlyKeyword, absentKeyword;
+        static RE::BGSLocation location, parentLocation, ancestorLocation;
+        static RE::TESRegion firstRegion, secondRegion, savedRegion;
+        static RE::TESRegionList regions{&firstRegion, nullptr, &secondRegion}, savedRegions{&savedRegion};
+        static RE::TESObjectCELL cell, savedCell;
+        static RE::TESWorldSpace worldspace, parentWorld, ancestorWorld;
+        static RE::TESObjectREFR ref;
+        RE::TESForm::Register(base, 0xE000);
+        RE::TESForm::Register(baseKeyword, 0xE010);
+        RE::TESForm::Register(locationKeyword, 0xE011);
+        RE::TESForm::Register(referenceKeyword, 0xE012);
+        RE::TESForm::Register(parentOnlyKeyword, 0xE013);
+        RE::TESForm::Register(absentKeyword, 0xE014);
+        RE::TESForm::Register(location, 0xE100);
+        RE::TESForm::Register(parentLocation, 0xE101);
+        RE::TESForm::Register(ancestorLocation, 0xE102);
+        RE::TESForm::Register(firstRegion, 0xE200);
+        RE::TESForm::Register(secondRegion, 0xE201);
+        RE::TESForm::Register(savedRegion, 0xE202);
+        RE::TESForm::Register(cell, 0xE300);
+        RE::TESForm::Register(savedCell, 0xE301);
+        RE::TESForm::Register(worldspace, 0xE400);
+        RE::TESForm::Register(parentWorld, 0xE401);
+        RE::TESForm::Register(ancestorWorld, 0xE402);
+        RE::TESForm::Register(ref, 0xE500);
+        base.keywords = {&baseKeyword};
+        location.keywords = {&locationKeyword};
+        parentLocation.keywords = {&parentOnlyKeyword};
+        location.parentLoc = &parentLocation;
+        parentLocation.parentLoc = &ancestorLocation;
+        cell.regionList = &regions;
+        savedCell.regionList = &savedRegions;
+        worldspace.parentWorld = &parentWorld;
+        parentWorld.parentWorld = &ancestorWorld;
+        ref.base = &base;
+        ref.location = &location;
+        ref.worldspace = &worldspace;
+        ref.parentCell = &cell;
+        ref.saveParentCell = &savedCell;
+        ref.referenceKeywords = {&referenceKeyword};
+
+        const auto context = FormFilters::CaptureContext(&ref);
+        Require(context.locations == std::vector<std::uint32_t>{0xE100, 0xE101, 0xE102},
+            "location context includes the object location and all ancestors");
+        Require(context.cellID == 0xE300 && context.regions == std::vector<std::uint32_t>{0xE200, 0xE201},
+            "cell and regions come from the object's current cell, ignoring null region entries");
+        Require(context.worldspaces == std::vector<std::uint32_t>{0xE400, 0xE401},
+            "worldspace context includes only the current and immediate parent worldspace");
+        Require(context.hasKeyword && context.hasKeyword(0xE010), "keyword context uses the owning base object");
+        Require(context.hasKeyword(0xE011), "keyword context uses the current location");
+        Require(context.hasKeyword(0xE012), "keyword context preserves reference keyword behavior");
+        Require(!context.hasKeyword(0xE013), "location keyword filters do not inherit parent-location keywords");
+        Require(!context.hasKeyword(0xE014) && !context.hasKeyword(0xEFFF),
+            "keyword context rejects absent and unresolved keyword records");
+        Require(!context.hasKeyword(0xE100), "a non-keyword form ID cannot pass a keyword condition");
+        ref.parentCell = nullptr;
+        const auto saved = FormFilters::CaptureContext(&ref);
+        Require(saved.cellID == 0xE301 && saved.regions == std::vector<std::uint32_t>{0xE202},
+            "missing current cell falls back to saved cell and its regions");
+        ref.saveParentCell = nullptr;
+        ref.location = nullptr;
+        ref.worldspace = nullptr;
+        const auto missing = FormFilters::CaptureContext(&ref);
+        Require(missing.cellID == 0 && missing.regions.empty() && missing.locations.empty() && missing.worldspaces.empty(),
+            "references without geographic context are handled safely");
+        Require(missing.hasKeyword && missing.hasKeyword(0xE010), "missing location does not discard object keywords");
+        const auto null = FormFilters::CaptureContext(nullptr);
+        Require(null.cellID == 0 && null.locations.empty() && null.regions.empty() && null.worldspaces.empty() &&
+            (!null.hasKeyword || !null.hasKeyword(0xE010)), "null reference capture safely yields no matching facts");
+        ancestorLocation.parentLoc = &location;
+        ref.location = &location;
+        const auto cyclic = FormFilters::CaptureContext(&ref);
+        Require(cyclic.locations == std::vector<std::uint32_t>{0xE100, 0xE101, 0xE102},
+            "a malformed location cycle terminates without duplicate ancestors");
+        ancestorLocation.parentLoc = nullptr;
+
+        FormFilter valid;
+        valid.locationID = std::vector<std::uint32_t>{0xE100};
+        valid.regionID = std::vector<std::uint32_t>{0xE200};
+        valid.keywordID = std::vector<std::uint32_t>{0xE010};
+        valid.cellID = std::vector<std::uint32_t>{0xE300};
+        valid.worldspaceID = std::vector<std::uint32_t>{0xE400};
+        valid.excludeLocationID = valid.locationID;
+        valid.excludeRegionID = valid.regionID;
+        valid.excludeKeywordID = valid.keywordID;
+        valid.excludeCellID = valid.cellID;
+        valid.excludeWorldspaceID = valid.worldspaceID;
+        std::string_view invalidField;
+        Require(FormFilters::ValidateContextIDs(valid, invalidField), "all typed inclusion and exclusion records validate");
+        valid.locationID = std::vector<std::uint32_t>{0xE200};
+        Require(!FormFilters::ValidateContextIDs(valid, invalidField) && invalidField == "LocationID",
+            "wrong-type conditions are rejected with the offending field name");
+        valid.locationID = std::vector<std::uint32_t>{0xEFFF};
+        Require(!FormFilters::ValidateContextIDs(valid, invalidField), "unresolved context form IDs are rejected");
+        valid.locationID.reset();
+        valid.excludeRegionID = std::vector<std::uint32_t>{0xE010};
+        Require(!FormFilters::ValidateContextIDs(valid, invalidField) && invalidField == "ExcludeRegionID",
+            "wrong-type exclusions cannot silently become ineffective");
+        FormFilter legacy;
+        legacy.baseFormID = std::vector<std::uint32_t>{0xEFFF};
+        legacy.referenceID = std::vector<std::uint32_t>{0xEFFE};
+        Require(FormFilters::ValidateContextIDs(legacy, invalidField),
+            "context record validation preserves the legacy raw base/reference ID behavior");
     }
 
     void TestSelection() {
@@ -520,6 +702,7 @@ namespace {
         auto manager = Manager::GetSingleton();
         manager->Register("legacy-empty.nif", {});
         Require(!manager->HasScopedRules(), "empty and legacy entries do not enable scoped hooks");
+        Require(!manager->HasContextRules(), "legacy entries do not require reference context capture");
         static auto first = MakeVariant("legacy-process-a.nif", "legacy-process-a.nif");
         static auto second = MakeVariant("legacy-process-b.nif", "legacy-process-b.nif");
         manager->Register("legacy-process-original.nif", {&first, &second});
@@ -532,6 +715,108 @@ namespace {
         const char* expected = distribution(engine) == 0 ? first.model : second.model;
         manager->Process(&base, 0x901);
         Require(std::string(base.GetModel()) == expected, "legacy Process preserves persistent replacement behavior");
+    }
+
+    void TestContextSelectionAndRestoration() {
+        auto manager = Manager::GetSingleton();
+        Require(!manager->HasContextRules(), "existing ID-only and legacy rules do not enable contextual loading");
+        static auto empty = MakeVariant("context-empty-exclusions-target.nif", "context-empty-exclusions-target.nif");
+        empty.filter.excludeLocationID = std::vector<std::uint32_t>{};
+        empty.filter.excludeKeywordID = std::vector<std::uint32_t>{};
+        manager->Register("context-empty-exclusions-original.nif", {&empty});
+        Require(!manager->HasContextRules(), "empty context exclusions retain the legacy capture fast path");
+
+        static auto conditional = MakeVariant("context-shared-target.nif", "context-shared-target.nif");
+        conditional.filter.locationID = std::vector<std::uint32_t>{0xEE10};
+        manager->Register("context-shared-original.nif", {&conditional});
+        Require(manager->HasContextRules() && manager->HasScopedRules(),
+            "a contextual rule with no base/reference filter enables scoped loading and capture");
+        FormFilterContext matching, other;
+        matching.locations = {0xEE10};
+        other.locations = {0xEE11};
+        RE::TESBoundObject base;
+        base.formID = 0xEE00;
+        base.SetModel("context-shared-original.nif");
+        {
+            ModelSwapScope outer(0xEE01);
+            outer.Add(manager->Swap(&base, 0xEE01, &matching));
+            Require(std::string(base.GetModel()) == conditional.model, "matching geographic context selects the conditioned model");
+            {
+                ModelSwapScope nested(0xEE02);
+                nested.Add(manager->Swap(&base, 0xEE02, &other));
+                Require(std::string(base.GetModel()) == "context-shared-original.nif",
+                    "a different context sharing the base sees the original during a nested load");
+            }
+            Require(std::string(base.GetModel()) == conditional.model, "nested contextual load resumes its outer replacement");
+        }
+        Require(std::string(base.GetModel()) == "context-shared-original.nif", "contextual scope restores the shared base");
+        auto withoutReference = manager->Swap(&base, 0xEE01);
+        Require(std::string(base.GetModel()) == "context-shared-original.nif", "contextual rules cannot leak into legacy no-context calls");
+        withoutReference->Reset();
+        {
+            ModelSwapScope scope(0xEE01);
+            scope.Add(manager->Swap(&base, 0xEE01, &other));
+            Require(std::string(base.GetModel()) == "context-shared-original.nif", "changed context is reevaluated for the same reference ID");
+        }
+
+        static auto aliasScoped = MakeVariant("context-alias-target.nif", "context-alias-shared.nif");
+        aliasScoped.filter.locationID = std::vector<std::uint32_t>{0xEE10};
+        static auto aliasGlobal = MakeVariant("context-alias-shared.nif", "context-alias-shared.nif");
+        manager->Register("context-alias-conditioned.nif", {&aliasScoped});
+        manager->Register("context-alias-global.nif", {&aliasGlobal});
+        bool sawConditioned = false;
+        for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+            base.SetModel("context-alias-shared.nif");
+            auto selected = manager->Swap(&base, ref, &matching);
+            sawConditioned = sawConditioned || std::string(base.GetModel()) == aliasScoped.model;
+            selected->Reset();
+            selected = manager->Swap(&base, ref, &other);
+            Require(std::string(base.GetModel()) == aliasGlobal.model, "unmatched contextual aliases leave legacy choices eligible");
+            selected->Reset();
+        }
+        Require(sawConditioned, "legacy alias registration preserves existing conditioned variants");
+
+        static auto skinRule = MakeVariant("context-skin-target.nif", "context-skin-target.nif", 0xEF00);
+        skinRule.filter.keywordID = std::vector<std::uint32_t>{0xEF10};
+        manager->Register(std::vector<std::string>{}, {&skinRule});
+        FormFilterContext npcContext;
+        npcContext.hasKeyword = [](std::uint32_t id) { return id == 0xEF10; };
+        RE::TESObjectARMA armor;
+        armor.formID = 0xEF99;
+        const std::array<const char*, 4> originals{"context-male3.nif", "context-female3.nif", "context-male1.nif", "context-female1.nif"};
+        std::array<RE::TESModel*, 4> channels{&armor.bipedModels[0], &armor.bipedModels[1],
+            &armor.bipedModel1stPersons[0], &armor.bipedModel1stPersons[1]};
+        for (std::size_t i = 0; i < channels.size(); ++i) channels[i]->SetModel(originals[i]);
+        {
+            ModelSwapScope scope(0xEF01);
+            scope.Add(manager->Swap(&armor, 0xEF01, 0xEF00, &npcContext));
+            for (auto* channel : channels) Require(std::string(channel->GetModel()) == skinRule.model,
+                "owning NPC context and base ID reach every skin model channel");
+        }
+        for (std::size_t i = 0; i < channels.size(); ++i) Require(std::string(channels[i]->GetModel()) == originals[i],
+            "conditioned skin swaps restore all four model channels");
+        auto wrongOwner = manager->Swap(&armor, 0xEF01, 0xEF99, &npcContext);
+        for (std::size_t i = 0; i < channels.size(); ++i) Require(std::string(channels[i]->GetModel()) == originals[i],
+            "skin context cannot override an owning-NPC base ID mismatch");
+        wrongOwner->Reset();
+
+        auto dated = MakeVariant("context-dated-target.nif", "context-dated-target.nif");
+        dated.filter.locationID = std::vector<std::uint32_t>{0xEE10};
+        const auto dates = Time::fromDatePairString("01-01~31-01");
+        dated.startDate = dates.first;
+        dated.endDate = dates.second;
+        models datedModels{{"context-dated-original.nif", {&dated}}};
+        auto config = Config::GetSingleton();
+        config->NowOverride = Time::fromString("2026-10-06 12:00:00");
+        Require(!find(datedModels, "context-dated-original.nif", 0xEE01, 0xEE00, &matching),
+            "a context match preserves existing temporal inactivity");
+        config->BypassTemporalActivation = true;
+        Require(find(datedModels, "context-dated-original.nif", 0xEE01, 0xEE00, &matching) == &dated,
+            "temporal bypass permits a matching contextual rule");
+        Require(!find(datedModels, "context-dated-original.nif", 0xEE01, 0xEE00, &other),
+            "temporal bypass never bypasses context restrictions");
+        config->BypassTemporalActivation = false;
+        config->NowOverride = {};
     }
 
     void TestConfigLoading() {
@@ -739,11 +1024,146 @@ namespace {
         }
         other->Reset();
     }
+
+    void TestContextConfigLoading() {
+        static std::array<RE::BGSLocation, 2> locations;
+        static std::array<RE::TESRegion, 2> regions;
+        static std::array<RE::BGSKeyword, 2> keywords;
+        static std::array<RE::TESObjectCELL, 2> cells;
+        static std::array<RE::TESWorldSpace, 2> worldspaces;
+        struct Category {
+            const char* include;
+            const char* exclude;
+            std::uint32_t id;
+            std::function<void(FormFilterContext&, std::uint32_t)> populate;
+        };
+        const std::array<Category, 5> categories{{
+            {"LocationID", "ExcludeLocationID", 0x0100F100, [](auto& context, auto id) { context.locations = {id}; }},
+            {"RegionID", "ExcludeRegionID", 0x0100F200, [](auto& context, auto id) { context.regions = {id}; }},
+            {"KeywordID", "ExcludeKeywordID", 0x0100F300, [](auto& context, auto id) {
+                context.hasKeyword = [id](auto candidate) { return candidate == id; };
+            }},
+            {"CellID", "ExcludeCellID", 0x0100F400, [](auto& context, auto id) { context.cellID = id; }},
+            {"WorldspaceID", "ExcludeWorldspaceID", 0x0100F500, [](auto& context, auto id) { context.worldspaces = {id}; }}
+        }};
+        for (std::size_t i = 0; i < 2; ++i) {
+            RE::TESForm::Register(locations[i], categories[0].id + static_cast<std::uint32_t>(i));
+            RE::TESForm::Register(regions[i], categories[1].id + static_cast<std::uint32_t>(i));
+            RE::TESForm::Register(keywords[i], categories[2].id + static_cast<std::uint32_t>(i));
+            RE::TESForm::Register(cells[i], categories[3].id + static_cast<std::uint32_t>(i));
+            RE::TESForm::Register(worldspaces[i], categories[4].id + static_cast<std::uint32_t>(i));
+        }
+        const auto qualified = [](std::uint32_t id) { return std::format("Example.esp|{:X}", id & 0xFFFFFF); };
+        auto entries = json::array();
+        const auto add = [&](const std::string& stem, const char* field, const json& ids) {
+            entries.push_back(json{{"OriginalModel", stem + ".nif"},
+                {"Variants", json::array({stem + "-target.nif"})}, {field, ids}});
+        };
+        for (const auto& category : categories) {
+            for (const auto field : {category.include, category.exclude}) {
+                const auto stem = std::string("loader-context-") + field;
+                add(stem + "-scalar", field, qualified(category.id));
+                add(stem + "-array", field, json::array({category.id + 1, qualified(category.id)}));
+                add(stem + "-empty", field, json::array());
+                add(stem + "-invalid", field, json::array({qualified(category.id), "WhiterunLocation"}));
+                const auto wrongType = category.id == categories[2].id ? categories[1].id : categories[2].id;
+                add(stem + "-wrong-type", field, json::array({qualified(category.id), wrongType}));
+                add(stem + "-unresolved", field, category.id + 2);
+            }
+        }
+        entries.push_back(json{{"OriginalModel", "loader-context-mixed.nif"},
+            {"Variants", json::array({"loader-context-mixed-target.nif"})},
+            {"BaseFormID", "F000"}, {"ReferenceID", "F001"},
+            {"LocationID", qualified(categories[0].id)}, {"RegionID", qualified(categories[1].id)},
+            {"ExcludeKeywordID", qualified(categories[2].id)}});
+        entries.push_back(json{{"Variants", json::array({"loader-context-missing-target.nif"})},
+            {"LocationID", qualified(categories[0].id)}});
+        entries.push_back(json{{"OriginalModel", "loader-context-after-invalid.nif"},
+            {"Variants", json::array({"loader-context-after-invalid-target.nif"})}});
+
+        const auto fixtureRoot = std::filesystem::path(__FILE__).parent_path().parent_path() / "build/tests/context-fixture";
+        std::filesystem::create_directories(fixtureRoot / "Data/SKSE/Plugins");
+        const auto previousDirectory = std::filesystem::current_path();
+        std::filesystem::current_path(fixtureRoot);
+        {
+            std::ofstream fixture("Data/context_MS.json");
+            fixture << entries;
+        }
+        Persistence::Install();
+        const auto check = [](const std::string& stem, const FormFilterContext* context, bool swaps,
+                             std::uint32_t baseID = 0xF000, std::uint32_t refID = 0xF001) {
+            RE::TESBoundObject base;
+            base.formID = baseID;
+            const auto original = stem + ".nif";
+            const auto target = stem + "-target.nif";
+            base.SetModel(original.c_str());
+            {
+                ModelSwapScope scope(refID);
+                scope.Add(Manager::GetSingleton()->Swap(&base, refID, context));
+                const auto expected = swaps ? target : original;
+                if (std::string(base.GetModel()) != expected) {
+                    std::cerr << "Context loader case " << stem << ": expected " << expected
+                              << ", got " << base.GetModel() << '\n';
+                }
+                Require(std::string(base.GetModel()) == expected,
+                    "production loader and matcher enforce every contextual field and its record type");
+            }
+            Require(std::string(base.GetModel()) == original, "loaded contextual entries restore the original model");
+        };
+        for (const auto& category : categories) {
+            FormFilterContext matching, other, unresolved;
+            category.populate(matching, category.id);
+            category.populate(other, category.id + 2);
+            category.populate(unresolved, category.id + 2);
+            const bool deferredCell = std::string_view(category.include) == "CellID";
+            if (deferredCell) {
+                // This cell is deliberately created only after configuration loading
+                // and is never registered in the engine's form lookup table.
+                static RE::TESObjectCELL lateCell;
+                static RE::TESObjectREFR lateReference;
+                lateCell.formID = category.id + 2;
+                lateReference.parentCell = &lateCell;
+                unresolved = FormFilters::CaptureContext(&lateReference);
+            }
+            for (const bool exclusion : {false, true}) {
+                const auto field = exclusion ? category.exclude : category.include;
+                const auto stem = std::string("loader-context-") + field;
+                for (const auto mode : {"-scalar", "-array"}) {
+                    check(stem + mode, &matching, !exclusion);
+                    check(stem + mode, &other, exclusion);
+                    check(stem + mode, nullptr, false);
+                }
+                check(stem + "-empty", &matching, exclusion);
+                check(stem + "-empty", nullptr, exclusion);
+                check(stem + "-invalid", &matching, false);
+                check(stem + "-wrong-type", &matching, false);
+                check(stem + "-unresolved", &unresolved, deferredCell && !exclusion);
+                check(stem + "-unresolved", &matching, deferredCell && exclusion);
+            }
+        }
+        FormFilterContext locationOnly, regionOnly, neither, excluded;
+        categories[0].populate(locationOnly, categories[0].id);
+        categories[1].populate(regionOnly, categories[1].id);
+        excluded = locationOnly;
+        categories[2].populate(excluded, categories[2].id);
+        check("loader-context-mixed", &locationOnly, true);
+        check("loader-context-mixed", &regionOnly, true);
+        check("loader-context-mixed", &neither, false);
+        check("loader-context-mixed", &excluded, false);
+        check("loader-context-mixed", &locationOnly, false, 0xF002, 0xF001);
+        check("loader-context-mixed", &locationOnly, false, 0xF000, 0xF002);
+        check("loader-context-unlisted", &locationOnly, false);
+        check("loader-context-after-invalid", nullptr, true);
+        std::filesystem::remove("Data/context_MS.json");
+        std::filesystem::current_path(previousDirectory);
+    }
 }
 
 int main() {
     TestFilter();
     TestIDParsing();
+    TestContextFilters();
+    TestContextCapture();
     TestSelection();
     TestIDOnlySelection();
     TestLegacyManagement();
@@ -758,6 +1178,8 @@ int main() {
     TestMultipleOriginalRegistration();
     TestIDOnlyRestoration();
     TestOriginalModelLoading();
+    TestContextSelectionAndRestoration();
+    TestContextConfigLoading();
     std::cout << "Passed " << checks << " regression checks.\n";
 }
 

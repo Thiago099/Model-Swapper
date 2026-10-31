@@ -4,14 +4,22 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QGroupBox>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QTimer>
 
 #include <iostream>
 #include <stdexcept>
 
 namespace {
+const QStringList conditionIDFields{
+    "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID",
+    "ExcludeLocationID", "ExcludeRegionID", "ExcludeKeywordID", "ExcludeCellID", "ExcludeWorldspaceID"
+};
+
 void require(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
@@ -124,6 +132,104 @@ void testInvalidValuesCanBeRepaired() {
     processDeletes();
     require(form.value().value("BaseFormID").isString(), "Malformed ID type can be reset to an editable ID");
 }
+
+void testConditionFields() {
+    JsonForm form({"Skyrim.esm", "Installed.esp", "Light.esl"});
+    const QJsonObject legacy{{"OriginalModel", "Original.nif"}, {"Variants", QJsonArray{"Variant.nif"}}};
+    form.setValue(legacy);
+    require(form.value() == legacy, "New optional controls must not add fields to legacy entries");
+
+    for (const auto& name : conditionIDFields) {
+        auto* group = field(form, name);
+        auto* included = group->findChild<QCheckBox*>();
+        require(included && !included->isChecked(), "Each condition must have a dedicated unchecked optional control");
+        require(idMode(group)->currentIndex() == 0, "Each condition must offer the plugin/local Form ID controls");
+        bool installedPlugin = false;
+        for (auto* combo : group->findChildren<QComboBox*>()) {
+            if (combo->accessibleName() == "Plugin filename") {
+                installedPlugin = combo->findText("Installed.esp") >= 0;
+                combo->setCurrentText("Installed.esp");
+            }
+        }
+        require(installedPlugin, "Every condition plugin dropdown must list discovered plugins");
+        included->setChecked(true);
+        idText(group)->setText("001234");
+        require(form.value().value(name).toString() == "Installed.esp|001234", "Condition controls must save plugin-qualified Form IDs");
+
+        idMode(group)->setCurrentIndex(1);
+        idText(group)->setText("1234");
+        idMode(group)->setCurrentIndex(2);
+        require(form.value().value(name).toInteger() == 4660, "Every condition must support decimal runtime IDs");
+        idText(group)->setText("4294967296");
+        require(form.errors().join('\n').contains(name), "Out-of-range condition input must identify the field");
+        idText(group)->setText("4660");
+        require(form.errors().isEmpty(), "Correcting condition input must clear its error");
+
+        button(group, "Use list")->click();
+        processDeletes();
+        require(form.value().value(name).toArray() == QJsonArray{4660}, "Condition scalar-to-list conversion must preserve its type and ID");
+        button(group, "Use single value")->click();
+        processDeletes();
+        require(form.value().value(name).toInteger() == 4660, "Condition list-to-scalar conversion must preserve its ID");
+        button(group, "Use list")->click();
+        processDeletes();
+        button(group, "Add Form ID")->click();
+        processDeletes();
+        int textIndex = 0;
+        for (auto* text : group->findChildren<QLineEdit*>()) {
+            if (text->accessibleName() == "Form ID" && textIndex++ == 1) text->setText("ABC");
+        }
+        require(form.value().value(name).toArray() == QJsonArray{4660, "Skyrim.esm|ABC"},
+                "Every condition must support editing mixed ID lists");
+        included->setChecked(false);
+        require(!form.value().contains(name), "Disabling any condition must omit it from the saved entry");
+    }
+    require(form.value() == legacy, "Editing and disabling conditions must preserve legacy properties");
+
+    auto entry = legacy;
+    const QJsonArray forms{QString("Missing.esp|001234"), QString("0x01001234"), 4660,
+                          QJsonArray{}, QJsonArray{4660, "Light.esl|ABC", "0x01001234"}};
+    for (qsizetype index = 0; index < conditionIDFields.size(); ++index)
+        entry.insert(conditionIDFields.at(index), forms.at(index % forms.size()));
+    entry.insert("Extension", QJsonObject{{"nested", QJsonArray{true, QJsonValue::Null, "unchanged"}}});
+    form.setValue(entry);
+    processDeletes();
+    require(form.value() == entry && form.errors().isEmpty(),
+            "Condition fields must round trip scalar, list, empty-list and unknown values unchanged");
+
+    entry.insert("LocationID", false);
+    form.setValue(entry);
+    processDeletes();
+    require(form.value().value("LocationID").isBool(), "Invalid condition types must remain repairable without silent conversion");
+    button(field(form, "LocationID"), "Reset field")->click();
+    processDeletes();
+    require(form.value().value("LocationID").isString(), "Malformed conditions must offer the existing ID reset control");
+}
+
+void testUnknownFormIDProperty() {
+    JsonForm form({"Skyrim.esm"});
+    const QJsonObject legacy{{"OriginalModel", "Original.nif"}, {"Variants", QJsonArray{"Variant.nif"}}};
+    form.setValue(legacy);
+    QTimer::singleShot(0, [] {
+        auto* dialog = qobject_cast<QInputDialog*>(QApplication::activeModalWidget());
+        require(dialog != nullptr, "Adding an extra property must open its name dialog");
+        dialog->setTextValue("CustomFormID");
+        dialog->accept();
+    });
+    button(&form, "Add extra property")->click();
+    processDeletes();
+    require(form.value().value("CustomFormID").toString() == "Skyrim.esm|",
+            "Unknown FormID properties must retain their existing plugin/local ID default");
+    auto* text = field(form, "CustomFormID")->findChild<QPlainTextEdit*>();
+    require(text != nullptr, "Unknown properties must retain generic editing controls");
+    text->setPlainText("Unknown.esp|ABC");
+    auto expected = legacy;
+    expected.insert("CustomFormID", "Unknown.esp|ABC");
+    require(form.value() == expected, "Editing a custom FormID property must preserve it and the legacy entry");
+    form.setValue(expected);
+    processDeletes();
+    require(form.value() == expected, "Custom FormID properties must round trip unchanged");
+}
 }
 
 int main(int argc, char** argv) {
@@ -132,6 +238,8 @@ int main(int argc, char** argv) {
         testRoundTrip();
         testEdits();
         testInvalidValuesCanBeRepaired();
+        testConditionFields();
+        testUnknownFormIDProperty();
         std::cout << "JsonForm tests passed\n";
         return 0;
     } catch (const std::exception& error) {

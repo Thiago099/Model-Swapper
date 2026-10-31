@@ -26,12 +26,15 @@ enum class Hint { Generic, Model, ID, Time };
 
 const QStringList knownFields = {
     "OriginalModel", "Variants", "BaseFormID", "ReferenceID",
-    "ExcludeBaseFormID", "ExcludeReferenceID", "ActiveTimeSpan"
+    "ExcludeBaseFormID", "ExcludeReferenceID",
+    "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID",
+    "ExcludeLocationID", "ExcludeRegionID", "ExcludeKeywordID", "ExcludeCellID", "ExcludeWorldspaceID",
+    "ActiveTimeSpan"
 };
 
 Hint hintFor(const QString& key) {
     if (key == "OriginalModel" || key == "Variants") return Hint::Model;
-    if (key.endsWith("FormID") || key == "ReferenceID" || key == "ExcludeReferenceID") return Hint::ID;
+    if (key.endsWith("FormID") || (knownFields.contains(key) && key.endsWith("ID"))) return Hint::ID;
     if (key == "ActiveTimeSpan") return Hint::Time;
     return Hint::Generic;
 }
@@ -239,6 +242,12 @@ private:
             auto* enabled = new QCheckBox(key, group);
             enabled->setChecked(present);
             enabled->setToolTip("Include this property in the saved JSON");
+            const auto contextKey = key.startsWith("Exclude") ? key.mid(7) : key;
+            if (QStringList{"LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID"}.contains(contextKey)) {
+                enabled->setToolTip(key.startsWith("Exclude")
+                    ? "Reject this entry if any listed condition matches. An empty list excludes nothing."
+                    : "Match any included location, region, keyword, cell, or worldspace. Base and reference filters still apply. Empty inclusion lists alone match nothing.");
+            }
             title->addWidget(enabled);
             title->addStretch();
             groupLayout->addLayout(title);

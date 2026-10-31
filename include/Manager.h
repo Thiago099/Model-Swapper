@@ -9,6 +9,7 @@ class Manager {
     inline static Manager* singleton = nullptr;
     models sources;
     bool hasScopedRules = false;
+    bool hasContextRules = false;
 public:
     static inline Manager* GetSingleton() {
         if (!singleton) {
@@ -19,8 +20,11 @@ public:
     void Register(std::string key, variants value);
     void Register(std::vector<std::string> keys, variants value);
     bool HasScopedRules() const { return hasScopedRules; }
-    std::unique_ptr<AVObject> Swap(RE::TESBoundObject* base, RE::FormID id);
-    std::unique_ptr<AVObject> Swap(RE::TESObjectARMA* base, RE::FormID id, RE::FormID baseFormID);
+    bool HasContextRules() const { return hasContextRules; }
+    std::unique_ptr<AVObject> Swap(RE::TESBoundObject* base, RE::FormID id,
+                                   const FormFilterContext* context = nullptr);
+    std::unique_ptr<AVObject> Swap(RE::TESObjectARMA* base, RE::FormID id, RE::FormID baseFormID,
+                                   const FormFilterContext* context = nullptr);
     void Process(RE::TESBoundObject* base, RE::FormID id);
     void Process(RE::TESObjectARMA* base, RE::FormID id);
 };

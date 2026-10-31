@@ -1,0 +1,42 @@
+[
+  {
+    "OriginalModel": "Example\\LocationOriginal.nif",
+    "Variants": [
+      "Example\\LocationVariant.nif"
+    ],
+    "LocationID": "Example.esp|001100",
+    "ExcludeLocationID": ["Example.esp|001101", "Example.esp|001102"]
+  },
+  {
+    "OriginalModel": "Example\\RegionOriginal.nif",
+    "Variants": [
+      "Example\\RegionVariant.nif"
+    ],
+    "RegionID": ["Example.esp|002100", "Example.esp|002101"],
+    "ExcludeRegionID": "Example.esp|002102"
+  },
+  {
+    "OriginalModel": "Example\\KeywordOriginal.nif",
+    "Variants": [
+      "Example\\KeywordVariant.nif"
+    ],
+    "KeywordID": "Example.esp|003100",
+    "ExcludeKeywordID": "Example.esp|003101"
+  },
+  {
+    "OriginalModel": "Example\\CellOriginal.nif",
+    "Variants": [
+      "Example\\CellVariant.nif"
+    ],
+    "CellID": ["Example.esp|004100", "Example.esp|004101"],
+    "ExcludeCellID": ["Example.esp|004102"]
+  },
+  {
+    "OriginalModel": "Example\\WorldspaceOriginal.nif",
+    "Variants": [
+      "Example\\WorldspaceVariant.nif"
+    ],
+    "WorldspaceID": "Example.esp|005100",
+    "ExcludeWorldspaceID": "Example.esp|005101"
+  }
+]

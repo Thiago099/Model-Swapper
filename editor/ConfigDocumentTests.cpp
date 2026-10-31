@@ -11,6 +11,11 @@
 #include <stdexcept>
 
 namespace {
+    const QStringList conditionIDFields{
+        "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID",
+        "ExcludeLocationID", "ExcludeRegionID", "ExcludeKeywordID", "ExcludeCellID", "ExcludeWorldspaceID"
+    };
+
     void require(bool condition, const char* message) {
         if (!condition) {
             throw std::runtime_error(message);
@@ -115,6 +120,10 @@ namespace {
         const auto path = root + QStringLiteral("/Editing_MS.json");
         auto entry = validEntry();
         entry.insert(QStringLiteral("BaseFormID"), QJsonArray{4660, QStringLiteral("Unknown.esp|001234")});
+        const QJsonArray conditionForms{QString("Unknown.esp|001234"), QString("0x01001234"), 4660,
+                                       QJsonArray{}, QJsonArray{4660, "Light.esl|ABC", "0x01001234"}};
+        for (qsizetype index = 0; index < conditionIDFields.size(); ++index)
+            entry.insert(conditionIDFields.at(index), conditionForms.at(index % conditionForms.size()));
         entry.insert(QStringLiteral("Extra"), QJsonObject{{QStringLiteral("nested"), QJsonArray{true, QJsonValue::Null, 2.25}},
                                                           {QStringLiteral("largeInteger"), QJsonValue(qint64(9007199254740993LL))}});
         const QJsonArray expected{entry};
@@ -152,6 +161,42 @@ namespace {
         require(ConfigFiles::load(path, entries, loaded, error) && !ConfigFiles::validate(entries).isEmpty(),
                 "Invalid entry fields must still load so they can be repaired in the editor");
     }
+
+    void testConditionValidation() {
+        const QJsonArray validIDs{4660, 4294967295.0, QString("0x01001234"), QString("FFFFFFFF"),
+                                 QString("Missing.esp|FFFFFF"), QString("Light.esl|FFF")};
+        const QJsonArray invalidIDs{0, -1, 4294967296.0, 1.5, true, QJsonValue::Null, QJsonObject{},
+                                   QString("WhiterunLocation"), QString(""), QString("0x0"),
+                                   QString("FFFFFFFFF"), QString("Missing.esp|1000000"), QString("Light.esl|1000"),
+                                   QString("Missing.esp|"), QString("|123"), QString("Missing.esp|1|2"),
+                                   QString("123\n"), QJsonArray{1}};
+        for (const auto& field : conditionIDFields) {
+            auto entry = validEntry();
+            for (const auto& id : validIDs) {
+                entry.insert(field, id);
+                require(accepts(entry), "Every condition field must accept existing scalar ID representations");
+            }
+            entry.insert(field, validIDs);
+            require(accepts(entry), "Every condition field must accept mixed ID arrays");
+            entry.insert(field, QJsonArray{});
+            require(accepts(entry), "Empty condition arrays must remain valid and preserve their runtime semantics");
+            for (const auto& id : invalidIDs) {
+                if (!id.isArray()) {
+                    entry.insert(field, id);
+                    const auto errors = ConfigFiles::validate(QJsonArray{entry});
+                    require(!errors.isEmpty() && errors.join('\n').contains(field),
+                            "Invalid condition IDs must be rejected with a field-specific error");
+                }
+                entry.insert(field, QJsonArray{QString("Missing.esp|123"), id});
+                require(!accepts(entry), "Any invalid condition array element must reject the entry");
+            }
+            entry.insert(field, QString("Missing.esp|123"));
+            entry.remove(QStringLiteral("OriginalModel"));
+            require(!accepts(entry), "Context conditions must not replace the existing model/base/reference target requirement");
+            entry.insert(QStringLiteral("ReferenceID"), QString("Missing.esp|456"));
+            require(accepts(entry), "Context conditions must work alongside existing ID-only targets");
+        }
+    }
 }
 
 int main(int argc, char** argv) {
@@ -161,6 +206,7 @@ int main(int argc, char** argv) {
         require(directory.isValid(), "Temporary directory must exist");
         testDiscovery(directory.path());
         testValidation();
+        testConditionValidation();
         testLoadingAndSaving(directory.path());
         std::cout << "ConfigDocument tests passed\n";
         return 0;

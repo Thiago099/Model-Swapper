@@ -20,17 +20,19 @@ public:
     virtual ~AVObject() = default;
     virtual void Reset() = 0;
     virtual std::unique_ptr<AVObject> Snapshot() = 0;
-    virtual void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID) = 0;
+    virtual void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID,
+                       const FormFilterContext* context = nullptr) = 0;
     virtual RE::TESForm* GetBase() = 0;
 };
 
-inline variant* find(const models& models, const char* str, uint32_t seed, RE::FormID baseFormID = 0) {
+inline variant* find(const models& models, const char* str, uint32_t seed, RE::FormID baseFormID = 0,
+                     const FormFilterContext* context = nullptr) {
     variants eligible;
     const auto appendEligible = [&](const std::string& key) {
         auto it = models.find(key);
         if (it != models.end()) {
             for (auto item : it->second) {
-                if (item->filter.Matches(baseFormID, seed)) {
+                if (item->filter.Matches(baseFormID, seed, context)) {
                     eligible.push_back(item);
                 }
             }
@@ -152,28 +154,29 @@ public:
         return func(src, &a2, &a3);
     }
 
-    void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID) override {
+    void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID,
+               const FormFilterContext* context = nullptr) override {
         if (!base) {
             return;
         }
 
         if (base->bipedModels) {
-            if (auto item = find(models, initialMaleThirdPersonModle.c_str(), referenceID, baseFormID)) {
+            if (auto item = find(models, initialMaleThirdPersonModle.c_str(), referenceID, baseFormID, context)) {
                 base->bipedModels[RE::SEXES::kMale].SetModel(item->model);
                 changedMaleThirdPerson = true;
             }
-            if (auto item = find(models, initialFemaleThirdPersonModle.c_str(), referenceID, baseFormID)) {
+            if (auto item = find(models, initialFemaleThirdPersonModle.c_str(), referenceID, baseFormID, context)) {
                 base->bipedModels[RE::SEXES::kFemale].SetModel(item->model);
                 changedFemaleThirdPerson = true;
             }
         }
         if (base->bipedModel1stPersons) {
 
-            if (auto item = find(models, initialMaleFirstPersonModle.c_str(), referenceID, baseFormID)) {
+            if (auto item = find(models, initialMaleFirstPersonModle.c_str(), referenceID, baseFormID, context)) {
                 base->bipedModel1stPersons[RE::SEXES::kMale].SetModel(item->model);
                 changedMaleFirstPerson = true;
             }
-            if (auto item = find(models, initialFemaleFirstPersonModel.c_str(), referenceID, baseFormID)) {
+            if (auto item = find(models, initialFemaleFirstPersonModel.c_str(), referenceID, baseFormID, context)) {
                 base->bipedModel1stPersons[RE::SEXES::kFemale].SetModel(item->model);
                 changedFemaleFirstPerson = true;
             }
@@ -214,12 +217,13 @@ public:
         }
     }
 
-    void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID) override {
+    void Match(const models& models, RE::FormID referenceID, RE::FormID baseFormID,
+               const FormFilterContext* context = nullptr) override {
         if (!base) {
             return;
         }
         if (auto bm = base->As<RE::TESModel>()) {
-            if (auto item = find(models, model.c_str(), referenceID, baseFormID)) {
+            if (auto item = find(models, model.c_str(), referenceID, baseFormID, context)) {
                 bm->SetModel(item->model);
                 changed = true;
             }

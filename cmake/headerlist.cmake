@@ -8,5 +8,6 @@ set(HEADER_FILES
 	include/Str.h
 	include/Wrapper.h
 	include/FormFilter.h
+	include/FilterContext.h
 	include/TimeClass.h
 )

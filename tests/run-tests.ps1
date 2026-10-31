@@ -51,8 +51,9 @@ try {
     $testSource = Join-Path $PSScriptRoot 'FormFilterTests.cpp'
     $managerSource = Join-Path $projectRoot 'src/Manager.cpp'
     $persistenceSource = Join-Path $projectRoot 'src/Persistence.cpp'
+    $filterContextSource = Join-Path $projectRoot 'src/FilterContext.cpp'
     $projectInclude = Join-Path $projectRoot 'include'
-    & cl.exe /nologo /std:c++latest /EHsc /permissive- /Zc:preprocessor /W4 /D_CRT_SECURE_NO_WARNINGS "/FI$runtimeHeader" "/I$projectInclude" "/I$DependencyInclude" $testSource $managerSource $persistenceSource /Fe:FormFilterTests.exe
+    & cl.exe /nologo /std:c++latest /EHsc /permissive- /Zc:preprocessor /W4 /D_CRT_SECURE_NO_WARNINGS "/FI$runtimeHeader" "/I$projectInclude" "/I$DependencyInclude" $testSource $managerSource $persistenceSource $filterContextSource /Fe:FormFilterTests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Regression test compilation failed.' }
     & './FormFilterTests.exe'
     if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed.' }

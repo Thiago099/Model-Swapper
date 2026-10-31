@@ -176,7 +176,12 @@ namespace ConfigFiles {
     QStringList validate(const QJsonArray& entries) {
         QStringList errors;
         const QStringList idFields{QStringLiteral("BaseFormID"), QStringLiteral("ReferenceID"),
-                                   QStringLiteral("ExcludeBaseFormID"), QStringLiteral("ExcludeReferenceID")};
+                                   QStringLiteral("ExcludeBaseFormID"), QStringLiteral("ExcludeReferenceID"),
+                                   QStringLiteral("LocationID"), QStringLiteral("RegionID"), QStringLiteral("KeywordID"),
+                                   QStringLiteral("CellID"), QStringLiteral("WorldspaceID"),
+                                   QStringLiteral("ExcludeLocationID"), QStringLiteral("ExcludeRegionID"),
+                                   QStringLiteral("ExcludeKeywordID"), QStringLiteral("ExcludeCellID"),
+                                   QStringLiteral("ExcludeWorldspaceID")};
         for (qsizetype index = 0; index < entries.size(); ++index) {
             const auto prefix = QStringLiteral("Entry [%1]").arg(index);
             if (!entries.at(index).isObject()) {

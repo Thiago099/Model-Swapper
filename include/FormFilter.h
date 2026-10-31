@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstdint>
 #include <functional>
@@ -12,6 +13,14 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
+struct FormFilterContext {
+    std::vector<std::uint32_t> locations;
+    std::vector<std::uint32_t> regions;
+    std::vector<std::uint32_t> worldspaces;
+    std::uint32_t cellID = 0;
+    std::function<bool(std::uint32_t)> hasKeyword;
+};
+
 struct FormFilter {
     using IDs = std::optional<std::vector<std::uint32_t>>;
 
@@ -19,28 +28,97 @@ struct FormFilter {
     IDs referenceID;
     IDs excludeBaseFormID;
     IDs excludeReferenceID;
+    IDs locationID;
+    IDs regionID;
+    IDs keywordID;
+    IDs cellID;
+    IDs worldspaceID;
+    IDs excludeLocationID;
+    IDs excludeRegionID;
+    IDs excludeKeywordID;
+    IDs excludeCellID;
+    IDs excludeWorldspaceID;
 
-    bool Matches(std::uint32_t baseID, std::uint32_t refID) const {
-        return (!baseFormID || Contains(baseFormID, baseID)) &&
-               (!referenceID || Contains(referenceID, refID)) &&
-               !Contains(excludeBaseFormID, baseID) &&
-               !Contains(excludeReferenceID, refID);
+    bool Matches(std::uint32_t baseID, std::uint32_t refID,
+                 const FormFilterContext* context = nullptr) const {
+        if ((baseFormID && !Contains(baseFormID, baseID)) ||
+            (referenceID && !Contains(referenceID, refID)) ||
+            Contains(excludeBaseFormID, baseID) || Contains(excludeReferenceID, refID)) {
+            return false;
+        }
+        if (!HasContextFilters()) {
+            return true;
+        }
+        if (!context) {
+            return false;
+        }
+
+        if (Intersects(excludeLocationID, context->locations) ||
+            Intersects(excludeRegionID, context->regions) ||
+            MatchesKeyword(excludeKeywordID, *context) ||
+            Contains(excludeCellID, context->cellID) ||
+            Intersects(excludeWorldspaceID, context->worldspaces)) {
+            return false;
+        }
+
+        const bool hasInclusions = locationID || regionID || keywordID || cellID || worldspaceID;
+        return !hasInclusions || Intersects(locationID, context->locations) ||
+               Intersects(regionID, context->regions) || MatchesKeyword(keywordID, *context) ||
+               Contains(cellID, context->cellID) || Intersects(worldspaceID, context->worldspaces);
+    }
+
+    bool HasContextFilters() const {
+        return locationID || regionID || keywordID || cellID || worldspaceID ||
+               Nonempty(excludeLocationID) || Nonempty(excludeRegionID) ||
+               Nonempty(excludeKeywordID) || Nonempty(excludeCellID) || Nonempty(excludeWorldspaceID);
     }
 
     bool IsScoped() const {
         return baseFormID.has_value() || referenceID.has_value() ||
                (excludeBaseFormID && !excludeBaseFormID->empty()) ||
-               (excludeReferenceID && !excludeReferenceID->empty());
+               (excludeReferenceID && !excludeReferenceID->empty()) || HasContextFilters();
     }
 
 private:
     static bool Contains(const IDs& ids, std::uint32_t id) {
         return ids && std::find(ids->begin(), ids->end(), id) != ids->end();
     }
+
+    static bool Nonempty(const IDs& ids) {
+        return ids && !ids->empty();
+    }
+
+    static bool Intersects(const IDs& ids, const std::vector<std::uint32_t>& values) {
+        return ids && std::any_of(values.begin(), values.end(), [&](auto id) { return Contains(ids, id); });
+    }
+
+    static bool MatchesKeyword(const IDs& ids, const FormFilterContext& context) {
+        return ids && context.hasKeyword &&
+               std::any_of(ids->begin(), ids->end(), context.hasKeyword);
+    }
 };
 
 namespace FormFilters {
     using Resolver = std::function<std::uint32_t(std::uint32_t, std::string_view)>;
+
+    enum class ContextType { Location, Region, Keyword, Cell, Worldspace };
+    struct ContextField {
+        std::string_view name;
+        FormFilter::IDs FormFilter::* member;
+        ContextType type;
+    };
+    inline constexpr std::array<ContextField, 10> ContextFields{{
+        {"LocationID", &FormFilter::locationID, ContextType::Location},
+        {"RegionID", &FormFilter::regionID, ContextType::Region},
+        {"KeywordID", &FormFilter::keywordID, ContextType::Keyword},
+        {"CellID", &FormFilter::cellID, ContextType::Cell},
+        {"WorldspaceID", &FormFilter::worldspaceID, ContextType::Worldspace},
+        {"ExcludeLocationID", &FormFilter::excludeLocationID, ContextType::Location},
+        {"ExcludeRegionID", &FormFilter::excludeRegionID, ContextType::Region},
+        {"ExcludeKeywordID", &FormFilter::excludeKeywordID, ContextType::Keyword},
+        {"ExcludeCellID", &FormFilter::excludeCellID, ContextType::Cell},
+        {"ExcludeWorldspaceID", &FormFilter::excludeWorldspaceID, ContextType::Worldspace}
+    }};
 
     inline bool ParseHex(std::string_view text, std::uint32_t& result) {
         if (text.starts_with("0x") || text.starts_with("0X")) {

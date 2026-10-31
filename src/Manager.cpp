@@ -10,10 +10,12 @@ void Manager::Register(std::vector<std::string> keys, variants value) {
     }
 
     const bool scoped = value.front()->filter.IsScoped();
+    const bool contextual = value.front()->filter.HasContextFilters();
 
     if (keys.empty()) {
         // The empty key holds ID-only rules, independent of the current path.
         hasScopedRules = hasScopedRules || scoped;
+        hasContextRules = hasContextRules || contextual;
         auto& idVariants = sources[""];
         idVariants.insert(idVariants.end(), value.begin(), value.end());
         return;
@@ -28,6 +30,7 @@ void Manager::Register(std::vector<std::string> keys, variants value) {
         originalKeys.insert(std::move(normalized));
     }
     hasScopedRules = hasScopedRules || scoped;
+    hasContextRules = hasContextRules || contextual;
     for (const auto& key : originalKeys) {
         auto& originalVariants = sources[key];
         originalVariants.insert(originalVariants.end(), value.begin(), value.end());
@@ -59,20 +62,22 @@ void Manager::Process(RE::TESObjectARMA* base, RE::FormID id) {
     auto wrapper = Swap(base, id, base ? base->GetFormID() : 0);
 }
 
-std::unique_ptr<AVObject> Manager::Swap(RE::TESBoundObject* base, RE::FormID id) {
+std::unique_ptr<AVObject> Manager::Swap(RE::TESBoundObject* base, RE::FormID id,
+                                      const FormFilterContext* context) {
     if (!base) {
         return nullptr;
     }
     auto wrapper = std::make_unique<AVModel>(base);
-    wrapper->Match(sources, id, base->GetFormID());
+    wrapper->Match(sources, id, base->GetFormID(), context);
     return wrapper;
 }
 
-std::unique_ptr<AVObject> Manager::Swap(RE::TESObjectARMA* base, RE::FormID id, RE::FormID baseFormID) {
+std::unique_ptr<AVObject> Manager::Swap(RE::TESObjectARMA* base, RE::FormID id, RE::FormID baseFormID,
+                                      const FormFilterContext* context) {
     if (!base) {
         return nullptr;
     }
     auto wrapper = std::make_unique<AVObjectARMA>(base);
-    wrapper->Match(sources, id, baseFormID);
+    wrapper->Match(sources, id, baseFormID, context);
     return wrapper;
 }
