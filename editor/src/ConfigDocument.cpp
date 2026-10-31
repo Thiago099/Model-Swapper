@@ -121,14 +121,15 @@ namespace {
         return !error && links > 1;
     }
 
-    bool checkSource(QFile& file, const QByteArray& expected, QString& error) {
+    bool checkSource(QFile& file, const QByteArray& expected, QString& error,
+                     const QString& operation = QStringLiteral("saving")) {
         const auto bytes = file.readAll();
         if (file.error() != QFileDevice::NoError) {
-            error = QStringLiteral("Cannot read the configuration before saving: %1").arg(file.errorString());
+            error = QStringLiteral("Cannot read the configuration before %1: %2").arg(operation, file.errorString());
             return false;
         }
         if (bytes != expected) {
-            error = QStringLiteral("The file changed outside the editor. Reload it before saving to avoid overwriting those changes.");
+            error = QStringLiteral("The file changed outside the editor. Reload it before %1 to avoid overwriting those changes.").arg(operation);
             return false;
         }
         return true;
@@ -158,6 +159,40 @@ namespace {
             return false;
         }
         return true;
+    }
+
+    bool pathExists(const QString& path) {
+        const QFileInfo file(path);
+        return file.exists() || file.isSymLink();
+    }
+
+    bool renameWithoutOverwrite(const QString& oldPath, const QString& newPath, QString& error) {
+#ifdef Q_OS_WIN
+        // Use MO2's hooked native rename without QFile's copy-and-delete
+        // fallback, which could change the backing file or its identity.
+        if (MoveFileW(reinterpret_cast<LPCWSTR>(oldPath.utf16()), reinterpret_cast<LPCWSTR>(newPath.utf16()))) {
+            return true;
+        }
+        const auto code = GetLastError();
+        wchar_t message[1024]{};
+        const auto length = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                           nullptr, code, 0, message, 1024, nullptr);
+        error = length ? QString::fromWCharArray(message, static_cast<int>(length)).trimmed()
+                       : QStringLiteral("Windows error %1").arg(code);
+        return false;
+#else
+        QFile file(oldPath);
+        if (file.rename(newPath)) return true;
+        error = file.errorString();
+        return false;
+#endif
+    }
+
+    bool hasContents(const QString& path, const QByteArray& expected) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) return false;
+        const auto bytes = file.readAll();
+        return file.error() == QFileDevice::NoError && bytes == expected;
     }
 }
 
@@ -355,5 +390,63 @@ namespace ConfigFiles {
         }
         savedSource = bytes;
         return true;
+    }
+
+    bool create(const QString& path, QByteArray& savedSource, QString& error) {
+        return save(path, QJsonArray{}, QByteArray{}, savedSource, error, SaveMode::InPlace);
+    }
+
+    bool rename(const QString& oldPath, const QString& newPath, const QByteArray& expectedSource, QString& error) {
+        error.clear();
+        if (oldPath.isEmpty() || newPath.isEmpty()) {
+            error = QStringLiteral("Choose a filename before renaming the configuration.");
+            return false;
+        }
+        const auto source = QDir::cleanPath(QFileInfo(oldPath).absoluteFilePath());
+        const auto destination = QDir::cleanPath(QFileInfo(newPath).absoluteFilePath());
+#ifdef Q_OS_WIN
+        constexpr auto pathCase = Qt::CaseInsensitive;
+        const bool caseOnly = source != destination && source.compare(destination, pathCase) == 0;
+#else
+        constexpr auto pathCase = Qt::CaseSensitive;
+        constexpr bool caseOnly = false;
+#endif
+        if (QFileInfo(source).absolutePath().compare(QFileInfo(destination).absolutePath(), pathCase) != 0) {
+            error = QStringLiteral("Rename the configuration within its current folder.");
+            return false;
+        }
+        QFile original(source);
+        if (!original.open(QIODevice::ReadOnly)) {
+            error = QStringLiteral("Cannot read the original configuration before renaming: %1").arg(original.errorString());
+            return false;
+        }
+        if (!checkSource(original, expectedSource, error, QStringLiteral("renaming"))) return false;
+        original.close();
+        if (source == destination) return true;
+        if (!caseOnly && pathExists(destination)) {
+            error = QStringLiteral("A file already exists with that name. Choose another filename.");
+            return false;
+        }
+        QString renameError;
+        if (!renameWithoutOverwrite(source, destination, renameError)) {
+            error = QStringLiteral("Cannot rename the configuration: %1").arg(renameError);
+            return false;
+        }
+        const bool destinationMatches = hasContents(destination, expectedSource);
+        const bool sourceRemains = !caseOnly && pathExists(source);
+        if (destinationMatches && !sourceRemains) return true;
+
+        // Only move back a destination whose bytes still match the snapshot,
+        // and never replace another file that appeared under the old name.
+        QString rollbackError;
+        if (!pathExists(source) && hasContents(destination, expectedSource) &&
+            renameWithoutOverwrite(destination, source, rollbackError) &&
+            hasContents(source, expectedSource) && !pathExists(destination)) {
+            error = QStringLiteral("The rename could not be verified. The original filename was restored.");
+        } else {
+            error = QStringLiteral("The rename could not be verified. Check %1 and %2 before retrying; no additional files were overwritten or removed.")
+                        .arg(QDir::toNativeSeparators(source), QDir::toNativeSeparators(destination));
+        }
+        return false;
     }
 }

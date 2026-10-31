@@ -21,4 +21,12 @@ namespace ConfigFiles {
     // virtual-filesystem write path without an injected mod manager.
     bool save(const QString& path, const QJsonArray& entries, const QByteArray& expectedSource,
               QByteArray& savedSource, QString& error, SaveMode mode = SaveMode::Automatic);
+
+    // Create an empty, valid configuration exclusively; an existing file is
+    // never overwritten, including if it appears after the initial check.
+    bool create(const QString& path, QByteArray& savedSource, QString& error);
+
+    // Rename within the same directory only after confirming the loaded bytes.
+    // The destination is never replaced, and success verifies the moved file.
+    bool rename(const QString& oldPath, const QString& newPath, const QByteArray& expectedSource, QString& error);
 }

@@ -13,7 +13,7 @@
     {
       "name": "qtbase",
       "default-features": false,
-      "features": ["widgets"]
+      "features": ["widgets", "png"]
     }
   ],
   "overrides": [

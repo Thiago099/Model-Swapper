@@ -37,5 +37,19 @@
             "displayName": "Release",
             "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
         }
+    ],
+    "buildPresets": [
+      {
+        "name": "debug",
+        "displayName": "Debug (plugin + editor)",
+        "configurePreset": "debug",
+        "targets": ["ModelSwapperAll"]
+      },
+      {
+        "name": "release",
+        "displayName": "Release (plugin + editor)",
+        "configurePreset": "release",
+        "targets": ["ModelSwapperAll"]
+      }
     ]
 }

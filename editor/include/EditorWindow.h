@@ -11,7 +11,7 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
-class QScrollArea;
+class QVBoxLayout;
 class JsonForm;
 
 class EditorWindow : public QMainWindow {
@@ -28,6 +28,7 @@ private:
     void scanFiles();
     void chooseDirectory();
     void newFile();
+    void renameFile();
     bool saveFile();
     bool confirmUnsavedChanges();
     bool reportFormErrors();
@@ -55,16 +56,17 @@ private:
     int currentEntry_ = -1;
     bool dirty_ = false;
     bool loading_ = false;
-    bool newDocument_ = false;
 
     QListWidget* files_ = nullptr;
     QListWidget* entryList_ = nullptr;
     QLineEdit* search_ = nullptr;
     QLabel* directoryLabel_ = nullptr;
     QLabel* documentLabel_ = nullptr;
-    QScrollArea* scroll_ = nullptr;
+    QVBoxLayout* editorLayout_ = nullptr;
+    QWidget* editorContent_ = nullptr;
     JsonForm* form_ = nullptr;
     QAction* saveAction_ = nullptr;
+    QAction* renameAction_ = nullptr;
     QAction* addAction_ = nullptr;
     QAction* duplicateAction_ = nullptr;
     QAction* removeAction_ = nullptr;

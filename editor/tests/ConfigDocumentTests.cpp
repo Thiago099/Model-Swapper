@@ -279,7 +279,147 @@ namespace {
         std::cout << "In-place repeated saves passed\n";
     }
 
+    void testImmediateCreation(const QString& root) {
+        const auto path = root + QStringLiteral("/ImmediatelyCreated_MS.json");
+        QByteArray source("unchanged output");
+        QString error;
+        require(ConfigFiles::create(path, source, error), "Creating a configuration must immediately create its file");
+        require(QFile::exists(path) && !source.isNull() && source == readFile(path),
+                "Creation must return the exact bytes already visible on disk");
+        const auto document = QJsonDocument::fromJson(source);
+        require(document.isArray() && document.array().isEmpty(), "A new configuration must contain an empty valid JSON array");
+        QJsonArray entries;
+        QByteArray loaded;
+        require(ConfigFiles::load(path, entries, loaded, error) && entries.isEmpty() && loaded == source,
+                "A newly created empty configuration must be loadable before adding entries");
+
+        QByteArray rejectedSource("unchanged output");
+        require(!ConfigFiles::create(path, rejectedSource, error) && !error.isEmpty(),
+                "Repeated creation must refuse to overwrite an existing file");
+        require(readFile(path) == source && rejectedSource == "unchanged output",
+                "A rejected create must preserve file contents and the caller output snapshot");
+        const auto unavailablePath = root + QStringLiteral("/missing-create-directory/Unavailable_MS.json");
+        require(!ConfigFiles::create(unavailablePath, rejectedSource, error) && !error.isEmpty(),
+                "Creating inside an unavailable directory must fail clearly");
+        require(!QFile::exists(unavailablePath) && rejectedSource == "unchanged output",
+                "A failed create must not report a source snapshot or leave a file");
+
+        const auto renamedPath = root + QStringLiteral("/RenamedEmpty_MS.json");
+        require(ConfigFiles::rename(path, renamedPath, source, error), "An immediately created empty configuration must be renameable");
+        require(!QFile::exists(path) && readFile(renamedPath) == source, "Renaming an empty configuration must move its existing file");
+        entries = QJsonArray{validEntry()};
+        QByteArray saved;
+        require(ConfigFiles::save(renamedPath, entries, source, saved, error),
+                "The empty creation snapshot must remain valid for saving entries after rename");
+        require(ConfigFiles::load(renamedPath, entries, loaded, error) && entries == QJsonArray{validEntry()} && loaded == saved,
+                "A renamed new configuration must persist and reload its first entry normally");
+    }
+
+    void testRenaming(const QString& root) {
+        const auto oldPath = root + QStringLiteral("/BeforeRename_MS.json");
+        const auto newPath = root + QStringLiteral("/AfterRename_MS.json");
+        auto entry = validEntry();
+        entry.insert("Unknown", QJsonObject{{"text", "first\nsecond"}, {"values", QJsonArray{true, QJsonValue::Null}},
+                                           {"largeInteger", QJsonValue(qint64(9007199254740993LL))}});
+        auto source = QJsonDocument(QJsonArray{entry}).toJson(QJsonDocument::Indented);
+        source.replace("\n", "\r\n");
+        writeFile(oldPath, source);
+        QString error;
+        require(ConfigFiles::rename(oldPath, oldPath, source, error), "Renaming to the identical path must be a safe no-op");
+        require(readFile(oldPath) == source, "An identical-name rename must not rewrite formatting or data");
+        require(ConfigFiles::rename(oldPath, newPath, source, error), "Renaming a loaded configuration must succeed");
+        require(!QFile::exists(oldPath) && QFile::exists(newPath) && readFile(newPath) == source,
+                "Rename must remove the old name and preserve exact bytes, unknown properties and CRLF formatting");
+        QJsonArray entries;
+        QByteArray loaded;
+        require(ConfigFiles::load(newPath, entries, loaded, error) && entries == QJsonArray{entry} && loaded == source,
+                "The renamed file must load with its original source snapshot and JSON values");
+
+        const auto collisionPath = root + QStringLiteral("/RenameCollision_MS.json");
+        const QByteArray collisionContents("[\r\n]\r\n");
+        writeFile(collisionPath, collisionContents);
+        require(!ConfigFiles::rename(newPath, collisionPath, source, error) && !error.isEmpty(),
+                "Rename must refuse an existing destination");
+        require(readFile(newPath) == source && readFile(collisionPath) == collisionContents,
+                "A rename collision must preserve both source and destination files");
+
+        const auto externalTarget = root + QStringLiteral("/ExternalRenameTarget_MS.json");
+        const QByteArray external("[]\n");
+        writeFile(newPath, external);
+        require(!ConfigFiles::rename(newPath, externalTarget, source, error) && error.contains(QStringLiteral("changed outside")),
+                "Rename must detect external changes to the loaded source");
+        require(readFile(newPath) == external && !QFile::exists(externalTarget),
+                "A refused stale-source rename must preserve the external contents and original filename");
+        require(!ConfigFiles::rename(newPath, newPath, source, error),
+                "Even an identical-name no-op must not accept a stale source snapshot");
+        writeFile(newPath, source);
+
+        const auto missingPath = root + QStringLiteral("/MissingRenameSource_MS.json");
+        const auto missingTarget = root + QStringLiteral("/MissingRenameTarget_MS.json");
+        require(!ConfigFiles::rename(missingPath, missingTarget, source, error) && !error.isEmpty(),
+                "Renaming a missing source must fail clearly");
+        require(!QFile::exists(missingPath) && !QFile::exists(missingTarget), "A missing-source rename must create neither path");
+
+        require(QDir(root).mkpath(QStringLiteral("rename-other-directory")), "Rename directory fixture must exist");
+        const auto otherDirectoryTarget = root + QStringLiteral("/rename-other-directory/Moved_MS.json");
+        require(!ConfigFiles::rename(newPath, otherDirectoryTarget, source, error) && !error.isEmpty(),
+                "Configuration renaming must not move files to another directory");
+        require(readFile(newPath) == source && !QFile::exists(otherDirectoryTarget),
+                "A refused directory change must leave the source and destination intact");
+        const auto nestedSource = root + QStringLiteral("/rename-other-directory/NestedSource_MS.json");
+        const auto traversalTarget = root + QStringLiteral("/rename-other-directory/../TraversalEscape_MS.json");
+        writeFile(nestedSource, source);
+        require(!ConfigFiles::rename(nestedSource, traversalTarget, source, error) && !error.isEmpty(),
+                "A parent-directory traversal must not escape the source directory during rename");
+        require(readFile(nestedSource) == source && !QFile::exists(traversalTarget),
+                "A rejected traversal must preserve its source and create no destination");
+    }
+
 #if defined(Q_OS_WIN)
+    void testCaseOnlyRename(const QString& root) {
+        const auto oldPath = root + QStringLiteral("/CaseOriginal_MS.json");
+        const auto newPath = root + QStringLiteral("/caseoriginal_MS.json");
+        const auto source = QJsonDocument(QJsonArray{validEntry()}).toJson(QJsonDocument::Compact);
+        writeFile(oldPath, source);
+        QString error;
+        const bool renamed = ConfigFiles::rename(oldPath, newPath, source, error);
+        const auto names = QDir(root).entryList(QDir::Files);
+        if (renamed) {
+            require(readFile(newPath) == source && names.contains(QStringLiteral("caseoriginal_MS.json")) &&
+                    !names.contains(QStringLiteral("CaseOriginal_MS.json")),
+                    "A successful case-only rename must update filename spelling while preserving contents");
+        } else {
+            require(!error.isEmpty() && readFile(oldPath) == source && names.contains(QStringLiteral("CaseOriginal_MS.json")),
+                    "An unsupported case-only rename must fail clearly and retain its original name and contents");
+        }
+    }
+
+    void testHardLinkedRename(const QString& root) {
+        const auto stagingPath = root + QStringLiteral("/RenameStaging_MS.json");
+        const auto deployedPath = root + QStringLiteral("/RenameDeployed_MS.json");
+        const auto renamedPath = root + QStringLiteral("/RenamedDeployed_MS.json");
+        const auto nativeStaging = std::filesystem::path(stagingPath.toStdWString());
+        const auto nativeRenamed = std::filesystem::path(renamedPath.toStdWString());
+        const auto source = QJsonDocument(QJsonArray{validEntry()}).toJson(QJsonDocument::Compact);
+        writeFile(stagingPath, source);
+        std::error_code linkError;
+        std::filesystem::create_hard_link(nativeStaging, std::filesystem::path(deployedPath.toStdWString()), linkError);
+        require(!linkError, "Hard-linked rename fixture must be created on the same volume");
+        QString error;
+        require(ConfigFiles::rename(deployedPath, renamedPath, source, error), "A deployed hard-linked configuration must be renameable");
+        require(!QFile::exists(deployedPath) && readFile(renamedPath) == source && readFile(stagingPath) == source,
+                "Renaming one deployment alias must preserve its bytes and the untouched staging alias");
+        require(std::filesystem::hard_link_count(nativeStaging) == 2 && std::filesystem::hard_link_count(nativeRenamed) == 2,
+                "Renaming a hard-linked file must preserve its shared backing file");
+        auto entry = validEntry();
+        entry.insert("Variants", QJsonArray{"Example\\RenamedLinkedReplacement.nif"});
+        QByteArray saved;
+        require(ConfigFiles::save(renamedPath, QJsonArray{entry}, source, saved, error),
+                "A renamed deployment alias must remain editable with the loaded snapshot");
+        require(readFile(renamedPath) == saved && readFile(stagingPath) == saved,
+                "Saving a renamed deployment alias must still update its staging file");
+    }
+
     void testHardLinkedSave(const QString& root) {
         const auto stagingPath = root + QStringLiteral("/Staging_MS.json");
         const auto deployedPath = root + QStringLiteral("/Deployed_MS.json");
@@ -337,7 +477,11 @@ int main(int argc, char** argv) {
         testLoadingAndSaving(directory.path());
         testRepeatedSaveSnapshots(directory.path());
         testInPlaceSaves(directory.path());
+        testImmediateCreation(directory.path());
+        testRenaming(directory.path());
 #if defined(Q_OS_WIN)
+        testCaseOnlyRename(directory.path());
+        testHardLinkedRename(directory.path());
         testHardLinkedSave(directory.path());
 #endif
         std::cout << "ConfigDocument tests passed\n";

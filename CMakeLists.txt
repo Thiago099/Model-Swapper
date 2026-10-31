@@ -46,6 +46,8 @@ cmake_minimum_required(VERSION 3.21)
 set(AUTHOR_NAME "SkyrimThiago")
 set(PRODUCT_NAME "ModelSwapper")
 set(BEAUTIFUL_NAME "Model Swapper")
+set(EDITOR_PRODUCT_NAME "ModelSwapperEditor")
+set(EDITOR_BEAUTIFUL_NAME "Model Swapper Editor")
 project(${PRODUCT_NAME} VERSION 0.3.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -119,15 +121,6 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# Build the configuration editor even when the plugin target is selected directly.
-# Its output stays in the build tree; copyOutputs only deploys the SKSE plugin.
-add_subdirectory(editor)
-add_dependencies(${PROJECT_NAME} ModelSwapperEditor)
-if(MS_EDITOR_BUILD_TESTS)
-  enable_testing()
-endif()
-
-
 # ---------------------------------------------------- #
 #                        Output                        #
 # ---------------------------------------------------- #
@@ -135,4 +128,31 @@ endif()
 set(wildlander_output false)
 set(steam_owrt_output false)
 set(steam_mods_output true)
-automaticGameFolderOutput(wildlander_output, steam_owrt_output, steam_mods_output)
+automaticGameFolderOutput("${wildlander_output}" "${steam_owrt_output}" "${steam_mods_output}")
+
+# The editor uses these same destinations and switches, with its own mod name.
+# Add it after the output settings so its POST_BUILD copy is configured in the
+# directory where the executable target is created.
+add_subdirectory(editor)
+add_dependencies(${PROJECT_NAME} "${EDITOR_PRODUCT_NAME}")
+
+# Visual Studio's Build All and both build presets share this entry point.
+# The aggregate always refreshes deployment, even if only one binary changed or
+# a previously deployed executable was removed without requiring a relink.
+add_custom_target(ModelSwapperAll ALL)
+add_dependencies(ModelSwapperAll "${PROJECT_NAME}" "${EDITOR_PRODUCT_NAME}" Resource)
+automaticGameFolderOutput(
+  "${wildlander_output}" "${steam_owrt_output}" "${steam_mods_output}"
+  TARGET "${PROJECT_NAME}"
+  COMMAND_TARGET ModelSwapperAll
+)
+automaticGameFolderOutput(
+  "${wildlander_output}" "${steam_owrt_output}" "${steam_mods_output}"
+  TARGET "${EDITOR_PRODUCT_NAME}"
+  COMMAND_TARGET ModelSwapperAll
+  DISPLAY_NAME "${EDITOR_BEAUTIFUL_NAME}"
+  SUBDIRECTORY "."
+)
+if(MS_EDITOR_BUILD_TESTS)
+  enable_testing()
+endif()

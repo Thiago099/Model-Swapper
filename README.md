@@ -83,24 +83,36 @@ Conditions are evaluated when the object's 3D loads. A context change does not i
 
 ## Qt6 configuration editor
 
-`ModelSwapperEditor.exe` provides a form for each swap entry. Copy the executable into Skyrim's `Data` folder and launch it there. It uses the executable's folder regardless of the shortcut's working directory. You can also select a different Data folder in the application or launch it with `--data-dir "D:\Games\Skyrim\Data"`.
+`ModelSwapperEditor.exe` provides a form for each swap entry. Launch it from Skyrim's `Data` folder; repository-root builds can copy it there automatically using the output settings below. It uses the executable's folder regardless of the shortcut's working directory. You can also select a different Data folder in the application or launch it with `--data-dir "D:\Games\Skyrim\Data"`.
 
 The file list discovers all `_MS.json` files recursively. The plugin itself reads files directly inside `Data`; configurations in subfolders are shown for editing but must be moved to `Data` to be loaded by the plugin. The editor's filename search and discovery are case insensitive; use the exact `_MS.json` suffix when creating files for the plugin.
 
-Select a file, then a swap entry. You can create configurations and add, duplicate, or remove entries. The forms cover original models, replacement variants, base, reference, location, region, keyword, cell, and worldspace inclusion/exclusion ID filters, and `ActiveTimeSpan` (`dd-MM~dd-MM`). Optional-field checkboxes control whether a property is saved. Original models and IDs support single values or lists, including empty ID lists. Context conditions have dedicated controls and use the matching rules above.
+Select a file, then a swap entry. New configuration, Rename, Rescan files, and Choose Data folder sit above the file list. Add entry, Duplicate, and Remove sit above the entry list; Save sits above the current document's settings. The File and Entry menus and keyboard shortcuts remain available.
 
-Each plugin/local ID has an editable dropdown populated with `.esm`, `.esp`, and `.esl` files in the Data folder, plus a separate hexadecimal Form ID input. Plugin names absent from the folder remain editable. Full runtime IDs can also be entered as hexadecimal strings or decimal numbers. The editor checks ID syntax and ranges; the game resolves load order, record existence, and ESP light-plugin flags when loading the configuration, with deferred cell handling as described above.
+New immediately writes an empty configuration (`[]`) and selects it. Use Add entry to create the first swap, then Save when it is ready. Rename (`F2`) changes the selected file's name within the same folder and keeps the required `_MS.json` suffix. It preserves the file's contents and refuses to overwrite an existing file. Pending edits prompt for Save, Discard, or Cancel before renaming.
 
-Additional JSON properties have recursive forms for objects, lists, text, numbers, booleans, and null. Saving preserves these properties and the scalar/list forms of existing fields, and formats the file as indented JSON. Invalid configuration values produce errors before saving. Unsaved changes are protected when switching files or closing; saves also detect external file changes and verify the written contents before reporting success. When launched through Mod Organizer 2, the editor writes through its virtual filesystem mapping. Linked files are also updated in place; ordinary files use atomic replacement.
+Settings use four tabs, each with its own scrolling: Models contains replacement variants; Targets contains original models, base forms, and references; Conditions contains `ActiveTimeSpan` (`dd-MM~dd-MM`) and location, region, keyword, cell, and worldspace inclusions; Exclusions contains all exclusion filters. Entry names use the first nonempty enabled target in order: `OriginalModel`, `BaseFormID`, then `ReferenceID`, using the first populated value for lists. Optional-field checkboxes control whether a property is saved. Original models and IDs support single values or lists, including empty ID lists. Context conditions use the matching rules above.
 
-The editor builds alongside the plugin, including when building the `ModelSwapper` target explicitly:
+Every ID control uses an editable plugin dropdown populated with `.esm`, `.esp`, and `.esl` files in the Data folder, plus a local hexadecimal Form ID input. Plugin names absent from the folder remain editable. New and edited IDs use only `Plugin.esp|LocalID`. Existing raw runtime IDs are shown as read-only reference values and preserved unchanged until you explicitly supply both a plugin and local ID to replace them. Clearing both replacement inputs retains the original ID. The editor checks ID syntax and ranges; the game resolves load order, record existence, and ESP light-plugin flags when loading the configuration, with deferred cell handling as described above.
+
+Additional JSON properties are preserved automatically when saving and have no editing controls. Saving also preserves the scalar/list forms of existing fields and formats the file as indented JSON. Invalid configuration values produce errors before saving. Unsaved changes are protected when switching files or closing; saves also detect external file changes and verify the written contents before reporting success. When launched through Mod Organizer 2, the editor writes through its virtual filesystem mapping. Linked files are also updated in place; ordinary files use atomic replacement.
+
+The `debug` and `release` build presets use the common `ModelSwapperAll` target to build the plugin and editor together:
 
 ```powershell
 cmake --preset release
-cmake --build build/release --target ModelSwapper
+cmake --build --preset release
 ```
 
-Run these commands from an x64 Visual Studio developer environment with `VCPKG_ROOT` set. The vcpkg manifest includes Qt6 Widgets (`qtbase`). The existing static Windows preset builds Qt into the executable. The resulting editor is at `build/release/editor/ModelSwapperEditor.exe`. It stays in the build folder; the plugin's automatic game/mod-folder copy only deploys the plugin DLL and its debug symbols. Copy the editor to `Data` manually when ready.
+In Visual Studio, **Build > Build All** (`Ctrl+Shift+B` or `F7`) uses this common target regardless of the open document or the Current Document startup selection. It checks both products, recompiles only changed code, and refreshes both configured output copies on every invocation, including when neither binary needs relinking. Use the corresponding `debug` preset for a debug build. You can also invoke the common target directly with `cmake --build build/release --target ModelSwapperAll`.
+
+Direct component-target builds remain available. Building `ModelSwapper` includes its editor dependency; building `ModelSwapperEditor` directly checks the editor. Editor headers, sources, and tests live in `editor/include`, `editor/src`, and `editor/tests`, separate from the plugin's `include` and `src` folders.
+
+Run these commands from an x64 Visual Studio developer environment with `VCPKG_ROOT` set. The vcpkg manifest includes Qt6 Widgets and PNG support (`qtbase[widgets,png]`); Qt uses PNG for native Windows cursors and icons. The existing static Windows preset builds Qt into the executable. The default editor output is `build/release/editor/ModelSwapperEditor.exe`.
+
+The root `CMakeLists.txt` defines `EDITOR_PRODUCT_NAME` (`ModelSwapperEditor`) and `EDITOR_BEAUTIFUL_NAME` (`Model Swapper Editor`) directly below the plugin's product and display names. These control the editor's target/executable name and its separate mod-folder name.
+
+Repository-root builds also copy the editor to the same enabled destinations as the plugin. The executable goes directly into `SKYRIM_FOLDER/Data`, or into the root of a separate `Model Swapper Editor${PROJECT_SUFFIX}` folder under each enabled mod/overwrite root. The existing `wildlander_output`, `steam_owrt_output`, and `steam_mods_output` settings control both outputs. The plugin DLL continues to use its existing `Model Swapper${PROJECT_SUFFIX}/SKSE/Plugins` destination under mod roots and `Data/SKSE/Plugins` under Skyrim.
 
 To build the editor independently with an existing Qt6 installation:
 
@@ -109,9 +121,11 @@ cmake -S editor -B build/editor -DCMAKE_PREFIX_PATH="C:/Qt/6.x/msvc2022_64"
 cmake --build build/editor --config Release
 ```
 
-Use a Qt installation matching your compiler and runtime. For a shared Qt build, distribute its runtime libraries with the editor following [Qt's Windows deployment instructions](https://doc.qt.io/qt-6/windows-deployment.html). The normal static preset does not need separate Qt DLLs.
+Use a PNG-enabled Qt installation matching your compiler and runtime. For a shared Qt build, distribute its runtime libraries with the editor following [Qt's Windows deployment instructions](https://doc.qt.io/qt-6/windows-deployment.html). The normal static preset does not need separate Qt DLLs.
 
-Editor tests are available with `-DMS_EDITOR_BUILD_TESTS=ON`; run `ctest --test-dir build/release/editor --output-on-failure` after building the test targets, or use your standalone editor build directory. The tests cover file discovery, JSON validation and preservation, form controls, and unsaved-change handling.
+An editor-only build uses the build folder and does not run the repository-root automatic deployment. Copy its executable into `Data` manually when ready.
+
+Editor tests are available with `-DMS_EDITOR_BUILD_TESTS=ON`; run `ctest --test-dir build/release/editor --output-on-failure` after building the test targets, or use your standalone editor build directory. The tests cover file discovery, JSON validation and preservation, form controls, unsaved-change handling, and native Windows startup with splitter cursors.
 
 ## Environment variables
 

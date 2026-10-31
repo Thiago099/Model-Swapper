@@ -13,7 +13,8 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QSignalBlocker>
+#include <QScrollArea>
+#include <QTabWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -27,9 +28,9 @@ enum class Hint { Generic, Model, ID, Time };
 const QStringList knownFields = {
     "OriginalModel", "Variants", "BaseFormID", "ReferenceID",
     "ExcludeBaseFormID", "ExcludeReferenceID",
+    "ActiveTimeSpan",
     "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID",
-    "ExcludeLocationID", "ExcludeRegionID", "ExcludeKeywordID", "ExcludeCellID", "ExcludeWorldspaceID",
-    "ActiveTimeSpan"
+    "ExcludeLocationID", "ExcludeRegionID", "ExcludeKeywordID", "ExcludeCellID", "ExcludeWorldspaceID"
 };
 
 Hint hintFor(const QString& key) {
@@ -37,6 +38,13 @@ Hint hintFor(const QString& key) {
     if (key.endsWith("FormID") || (knownFields.contains(key) && key.endsWith("ID"))) return Hint::ID;
     if (key == "ActiveTimeSpan") return Hint::Time;
     return Hint::Generic;
+}
+
+int tabFor(const QString& key) {
+    if (key == "Variants") return 0;
+    if (key == "OriginalModel" || key == "BaseFormID" || key == "ReferenceID") return 1;
+    if (key.startsWith("Exclude")) return 3;
+    return 2;
 }
 
 QJsonValue defaultFor(const QString& key) {
@@ -92,8 +100,8 @@ bool parseNumber(const QString& text, QJsonValue& result) {
 }
 }
 
-// Recursive controls are also used for extension properties, so saving an entry
-// does not discard settings that a later plugin version might introduce.
+// Recursive controls retain JSON representations while editing or repairing
+// supported fields. Unknown entry properties are preserved without controls.
 class ValueForm : public QWidget {
 public:
     ValueForm(QJsonValue initial, QStringList plugins, Hint hint, bool entry,
@@ -101,14 +109,19 @@ public:
         : QWidget(parent), initial_(std::move(initial)), plugins_(std::move(plugins)),
           hint_(hint), entry_(entry), changed_(std::move(changed)), layout_(new QVBoxLayout(this)) {
         layout_->setContentsMargins(0, 0, 0, 0);
+        if (!entry_) layout_->setAlignment(Qt::AlignTop);
+        setSizePolicy(QSizePolicy::Expanding, entry_ ? QSizePolicy::Expanding : QSizePolicy::Preferred);
         rebuild(initial_);
     }
 
     QJsonValue value() const {
         if (initial_.isObject()) {
-            QJsonObject object;
+            // Unrecognized entry properties stay in the document without
+            // exposing controls for settings the plugin does not support.
+            QJsonObject object = entry_ ? initial_.toObject() : QJsonObject{};
             for (const auto& child : children_) {
                 if (!child.enabled || child.enabled->isChecked()) object.insert(child.key, child.form->value());
+                else object.remove(child.key);
             }
             return object;
         }
@@ -117,14 +130,11 @@ public:
             for (const auto& child : children_) array.append(child.form->value());
             return array;
         }
-        if (idMode_) {
-            const auto text = text_->text();
-            if (idMode_->currentIndex() == 0) return plugin_->currentText() + "|" + text;
-            if (idMode_->currentIndex() == 1) return text;
-            bool ok = false;
-            const auto number = text.toULongLong(&ok, 10);
-            if (ok && number > 0 && number <= 0xFFFFFFFFull) return QJsonValue(static_cast<qint64>(number));
-            return initial_;
+        if (plugin_) {
+            const auto plugin = plugin_->currentText();
+            const auto localID = text_->text();
+            if (isLegacyID() && plugin.isEmpty() && localID.isEmpty()) return initial_;
+            return plugin + "|" + localID;
         }
         if (text_) {
             if (initial_.isDouble()) {
@@ -140,12 +150,14 @@ public:
 
     QStringList errors(const QString& path) const {
         QStringList result;
-        if (idMode_ && idMode_->currentIndex() == 2) {
-            bool ok = false;
-            const auto number = text_->text().toULongLong(&ok, 10);
-            if (!ok || number == 0 || number > 0xFFFFFFFFull)
-                result << path + ": enter a decimal integer between 1 and 4294967295.";
-        } else if (text_ && initial_.isDouble() && !idMode_) {
+        if (plugin_ && isLegacyID()) {
+            const auto plugin = plugin_->currentText();
+            const auto localID = text_->text();
+            if (!(plugin.isEmpty() && localID.isEmpty()) &&
+                (plugin.trimmed().isEmpty() || localID.trimmed().isEmpty())) {
+                result << path + ": choose a plugin and enter its local hexadecimal Form ID, or clear both fields to keep the existing ID.";
+            }
+        } else if (text_ && initial_.isDouble() && !plugin_) {
             QJsonValue number;
             if (!parseNumber(text_->text(), number)) result << path + ": enter a valid JSON number.";
         }
@@ -168,6 +180,10 @@ private:
 
     void notify() { if (changed_) changed_(); }
 
+    bool isLegacyID() const {
+        return initial_.isDouble() || (initial_.isString() && !initial_.toString().contains('|'));
+    }
+
     bool canRestructure() const {
         const auto invalid = errors("Value");
         if (invalid.isEmpty()) return true;
@@ -181,14 +197,15 @@ private:
     }
 
     void rebuild(QJsonValue initial) {
+        if (tabs_) selectedTab_ = tabs_->currentIndex();
         clearLayout(layout_);
         initial_ = std::move(initial);
         children_.clear();
         text_ = nullptr;
         multiline_ = nullptr;
         check_ = nullptr;
-        idMode_ = nullptr;
         plugin_ = nullptr;
+        tabs_ = nullptr;
         if (initial_.isObject()) buildObject();
         else if (initial_.isArray()) buildArray();
         else if (hint_ == Hint::ID && (initial_.isString() || initial_.isDouble())) buildID();
@@ -231,13 +248,65 @@ private:
 
     void buildObject() {
         const auto object = initial_.toObject();
+        std::vector<QVBoxLayout*> tabLayouts;
+        if (entry_) {
+            tabs_ = new QTabWidget(this);
+            tabs_->setObjectName("entryTabs");
+            tabs_->setDocumentMode(true);
+            tabs_->setUsesScrollButtons(true);
+            const QStringList tabNames{"Models", "Targets", "Conditions", "Exclusions"};
+            for (const auto& name : tabNames) {
+                auto* page = new QWidget(tabs_);
+                auto* pageLayout = new QVBoxLayout(page);
+                pageLayout->setContentsMargins(0, 0, 0, 0);
+                auto* scroll = new QScrollArea(page);
+                scroll->setObjectName("entryTabScroll" + name);
+                scroll->setWidgetResizable(true);
+                scroll->setFrameShape(QFrame::NoFrame);
+                auto* content = new QWidget(scroll);
+                auto* contentLayout = new QVBoxLayout(content);
+                contentLayout->setContentsMargins(10, 12, 10, 12);
+                contentLayout->setSpacing(10);
+                contentLayout->setAlignment(Qt::AlignTop);
+                scroll->setWidget(content);
+                pageLayout->addWidget(scroll);
+                tabs_->addTab(page, name);
+                tabLayouts.push_back(contentLayout);
+            }
+            tabs_->setCurrentIndex(selectedTab_);
+            connect(tabs_, &QTabWidget::currentChanged, this, [this](int index) { selectedTab_ = index; });
+            layout_->addWidget(tabs_);
+        }
+        if (!entry_) {
+            auto* add = new QPushButton("Add property", this);
+            add->setAccessibleName(add->text());
+            add->setToolTip("Add a property to this object");
+            layout_->addWidget(add, 0, Qt::AlignLeft);
+            connect(add, &QPushButton::clicked, this, [this] {
+                if (!canRestructure()) return;
+                bool ok = false;
+                const auto key = QInputDialog::getText(this, "Add JSON property", "Property name:", QLineEdit::Normal, {}, &ok);
+                if (!ok || key.isEmpty()) return;
+                auto object = value().toObject();
+                if (object.contains(key)) {
+                    QMessageBox::warning(this, "Existing property", "That property already exists.");
+                    return;
+                }
+                object.insert(key, defaultFor(key));
+                replace(object);
+            });
+        }
         QStringList keys = entry_ ? knownFields : QStringList{};
-        for (auto i = object.begin(); i != object.end(); ++i) if (!keys.contains(i.key())) keys << i.key();
+        if (!entry_) {
+            for (auto i = object.begin(); i != object.end(); ++i) keys << i.key();
+        }
         for (const auto& key : keys) {
             const bool known = entry_ && knownFields.contains(key);
             const bool present = object.contains(key);
             auto* group = new QGroupBox(this);
             auto* groupLayout = new QVBoxLayout(group);
+            groupLayout->setContentsMargins(10, 8, 10, 10);
+            groupLayout->setSpacing(6);
             auto* title = new QHBoxLayout;
             auto* enabled = new QCheckBox(key, group);
             enabled->setChecked(present);
@@ -254,16 +323,20 @@ private:
             auto* form = new ValueForm(present ? object.value(key) : defaultFor(key), plugins_,
                                        known ? hintFor(key) : Hint::Generic, false, [this] { notify(); }, group);
             form->setEnabled(present);
+            form->setVisible(present);
             groupLayout->addWidget(form);
             children_.push_back({key, form, enabled});
             connect(enabled, &QCheckBox::toggled, this, [this, form](bool checked) {
                 form->setEnabled(checked);
+                form->setVisible(checked);
                 notify();
             });
             if (known && (key == "OriginalModel" || hintFor(key) == Hint::ID ||
                           (key == "Variants" && !form->value().isArray()))) {
                 auto* list = new QPushButton(present && object.value(key).isArray() ? "Use single value" : "Use list", group);
+                list->setVisible(present);
                 title->addWidget(list);
+                connect(enabled, &QCheckBox::toggled, list, &QPushButton::setVisible);
                 connect(list, &QPushButton::clicked, this, [this, form, list] {
                     if (!form->canRestructure()) return;
                     const auto current = form->value();
@@ -286,7 +359,9 @@ private:
                            !form->value().isString() && !form->value().isArray()) ||
                           (key == "ActiveTimeSpan" && !form->value().isString()))) {
                 auto* reset = new QPushButton("Reset field", group);
+                reset->setVisible(present);
                 title->addWidget(reset);
+                connect(enabled, &QCheckBox::toggled, reset, &QPushButton::setVisible);
                 connect(reset, &QPushButton::clicked, form, [form, key] { form->replace(defaultFor(key)); });
             }
             if (!known) {
@@ -300,48 +375,16 @@ private:
                     replace(object);
                 });
             }
-            layout_->addWidget(group);
+            (entry_ ? tabLayouts.at(tabFor(key)) : layout_)->addWidget(group);
         }
-        auto* add = new QPushButton(entry_ ? "Add extra property" : "Add property", this);
-        layout_->addWidget(add, 0, Qt::AlignLeft);
-        connect(add, &QPushButton::clicked, this, [this] {
-            if (!canRestructure()) return;
-            bool ok = false;
-            const auto key = QInputDialog::getText(this, "Add JSON property", "Property name:", QLineEdit::Normal, {}, &ok);
-            if (!ok || key.isEmpty()) return;
-            auto object = value().toObject();
-            if (object.contains(key)) {
-                QMessageBox::warning(this, "Existing property", "That property already exists.");
-                return;
-            }
-            object.insert(key, defaultFor(key));
-            replace(object);
-        });
     }
 
     void buildArray() {
         const auto array = initial_.toArray();
-        for (qsizetype index = 0; index < array.size(); ++index) {
-            auto* group = new QGroupBox("Value " + QString::number(index + 1), this);
-            auto* groupLayout = new QVBoxLayout(group);
-            auto* row = new QHBoxLayout;
-            auto* form = new ValueForm(array.at(index), plugins_, hint_, false, [this] { notify(); }, group);
-            children_.push_back({{}, form});
-            if (hint_ == Hint::Generic) addTypeSelector(form, row);
-            row->addStretch();
-            auto* remove = removeButton(group);
-            row->addWidget(remove);
-            connect(remove, &QToolButton::clicked, this, [this, index] {
-                if (!canRestructure()) return;
-                auto array = value().toArray();
-                array.removeAt(index);
-                replace(array);
-            });
-            groupLayout->addLayout(row);
-            groupLayout->addWidget(form);
-            layout_->addWidget(group);
-        }
         auto* add = new QPushButton(hint_ == Hint::ID ? "Add Form ID" : hint_ == Hint::Model ? "Add model" : "Add value", this);
+        add->setObjectName("addListItem");
+        add->setAccessibleName(add->text());
+        add->setToolTip(hint_ == Hint::ID ? "Append a Form ID to this list" : hint_ == Hint::Model ? "Append a model path to this list" : "Append a value to this list");
         layout_->addWidget(add, 0, Qt::AlignLeft);
         connect(add, &QPushButton::clicked, this, [this] {
             if (!canRestructure()) return;
@@ -350,63 +393,75 @@ private:
                                          : QJsonValue(QString{}));
             replace(array);
         });
+        for (qsizetype index = 0; index < array.size(); ++index) {
+            auto* item = new QWidget(this);
+            item->setObjectName("listItem");
+            auto* itemLayout = new QVBoxLayout(item);
+            itemLayout->setContentsMargins(0, 0, 0, 0);
+            itemLayout->setSpacing(4);
+            auto* row = new QHBoxLayout;
+            auto* number = new QLabel(QString::number(index + 1) + ".", item);
+            number->setObjectName("listItemNumber");
+            number->setMinimumWidth(20);
+            row->addWidget(number);
+            auto* form = new ValueForm(array.at(index), plugins_, hint_, false, [this] { notify(); }, item);
+            children_.push_back({{}, form});
+            if (hint_ == Hint::Generic) addTypeSelector(form, row);
+            const bool compact = !array.at(index).isArray() && !array.at(index).isObject();
+            if (compact) row->addWidget(form, 1);
+            else row->addStretch();
+            auto* remove = removeButton(item);
+            remove->setToolTip("Remove item " + QString::number(index + 1));
+            remove->setAccessibleName("Remove item " + QString::number(index + 1));
+            row->addWidget(remove);
+            connect(remove, &QToolButton::clicked, this, [this, index] {
+                if (!canRestructure()) return;
+                auto array = value().toArray();
+                array.removeAt(index);
+                replace(array);
+            });
+            itemLayout->addLayout(row);
+            if (!compact) itemLayout->addWidget(form);
+            layout_->addWidget(item);
+        }
     }
 
     void buildID() {
         auto* row = new QHBoxLayout;
-        idMode_ = new QComboBox(this);
-        idMode_->addItems({"Plugin + local ID", "Runtime ID (hex)", "Runtime ID (decimal)"});
-        idMode_->setAccessibleName("Form ID format");
         plugin_ = new QComboBox(this);
         plugin_->setEditable(true);
+        plugin_->lineEdit()->setPlaceholderText("Select or enter plugin");
         plugin_->setInsertPolicy(QComboBox::NoInsert);
         plugin_->addItems(plugins_);
+        plugin_->setCurrentIndex(-1);
+        plugin_->setEditText(QString{});
         plugin_->setAccessibleName("Plugin filename");
         plugin_->setToolTip("Installed .esm, .esp and .esl files; you can also type a filename");
         text_ = new QLineEdit(this);
         text_->setAccessibleName("Form ID");
         text_->setMinimumWidth(120);
-        if (initial_.isDouble()) {
-            idMode_->setCurrentIndex(2);
-            const auto json = QJsonDocument(QJsonArray{initial_}).toJson(QJsonDocument::Compact);
-            text_->setText(QString::fromUtf8(json.mid(1, json.size() - 2)));
-        } else {
+        text_->setPlaceholderText("001234");
+        if (!isLegacyID()) {
             const auto text = initial_.toString();
             const auto separator = text.indexOf('|');
-            idMode_->setCurrentIndex(separator < 0 ? 1 : 0);
-            if (separator >= 0) {
-                plugin_->setCurrentText(text.left(separator));
-                text_->setText(text.mid(separator + 1));
-            } else text_->setText(text);
+            plugin_->setCurrentText(text.left(separator));
+            text_->setText(text.mid(separator + 1));
         }
-        auto* label = new QLabel(this);
-        auto updateMode = [this, label] {
-            plugin_->setVisible(idMode_->currentIndex() == 0);
-            label->setText(idMode_->currentIndex() == 2 ? "Form ID (decimal)" : "Form ID (hex)");
-            text_->setPlaceholderText(idMode_->currentIndex() == 2 ? "4660" : "001234");
-        };
-        updateMode();
-        row->addWidget(idMode_);
+        auto* label = new QLabel("Local Form ID (hex)", this);
         row->addWidget(plugin_, 1);
         row->addWidget(label);
         row->addWidget(text_, 1);
         layout_->addLayout(row);
-        connect(idMode_, &QComboBox::currentIndexChanged, this, [this, updateMode, previous = idMode_->currentIndex()](int current) mutable {
-            // Changing between decimal and hex should preserve the ID's value.
-            if ((previous == 1 && current == 2) || (previous == 2 && current == 1)) {
-                bool ok = false;
-                QString text = text_->text();
-                if (previous == 1 && text.startsWith("0x", Qt::CaseInsensitive)) text.remove(0, 2);
-                const auto id = text.toULongLong(&ok, previous == 2 ? 10 : 16);
-                if (ok && id > 0 && id <= 0xFFFFFFFFull) {
-                    const QSignalBlocker block(text_);
-                    text_->setText(QString::number(id, current == 2 ? 10 : 16));
-                }
-            }
-            previous = current;
-            updateMode();
-            notify();
-        });
+        if (isLegacyID()) {
+            const auto json = QJsonDocument(QJsonArray{initial_}).toJson(QJsonDocument::Compact);
+            const auto original = QString::fromUtf8(json.mid(1, json.size() - 2));
+            auto* note = new QLabel("Existing ID: " + original + ". Fill both fields to replace it; leave both empty to keep it.", this);
+            note->setObjectName("legacyFormIDNote");
+            note->setTextFormat(Qt::PlainText);
+            note->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            note->setWordWrap(true);
+            layout_->addWidget(note);
+        }
         connect(plugin_, &QComboBox::currentTextChanged, this, [this] { notify(); });
         connect(text_, &QLineEdit::textChanged, this, [this] { notify(); });
     }
@@ -421,14 +476,15 @@ private:
     QLineEdit* text_ = nullptr;
     QPlainTextEdit* multiline_ = nullptr;
     QCheckBox* check_ = nullptr;
-    QComboBox* idMode_ = nullptr;
     QComboBox* plugin_ = nullptr;
+    QTabWidget* tabs_ = nullptr;
+    int selectedTab_ = 0;
 };
 
 JsonForm::JsonForm(const QStringList& plugins, QWidget* parent)
     : QWidget(parent), plugins_(plugins), layout_(new QVBoxLayout(this)) {
-    layout_->setContentsMargins(12, 12, 12, 12);
-    layout_->setAlignment(Qt::AlignTop);
+    layout_->setContentsMargins(0, 0, 0, 0);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 }
 
 void JsonForm::setValue(const QJsonObject& entry) {

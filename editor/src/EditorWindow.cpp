@@ -9,6 +9,8 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QInputDialog>
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeySequence>
 #include <QLabel>
@@ -16,17 +18,52 @@
 #include <QListWidget>
 #include <QMenuBar>
 #include <QMessageBox>
-#include <QScrollArea>
+#include <QRegularExpression>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QStyle>
+#include <QTabWidget>
 #include <QToolBar>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 namespace {
     QJsonObject blankEntry() {
         return {{QStringLiteral("OriginalModel"), QString()},
                 {QStringLiteral("Variants"), QJsonArray{QString()}}};
+    }
+
+    QString configurationPath(QString path) {
+        if (path.endsWith(QStringLiteral("_MS.json"), Qt::CaseInsensitive)) {
+            path.chop(8);
+        } else if (path.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
+            path.chop(5);
+        }
+        return path + QStringLiteral("_MS.json");
+    }
+
+    QToolBar* actionBar(QWidget* parent, const QString& name) {
+        auto* bar = new QToolBar(parent);
+        bar->setObjectName(name);
+        bar->setMovable(false);
+        bar->setFloatable(false);
+        bar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        bar->setIconSize(QSize(16, 16));
+        return bar;
+    }
+
+    void addPanelAction(QToolBar* bar, QAction* action, const QString& text,
+                        QStyle::StandardPixmap icon) {
+        action->setIcon(bar->style()->standardIcon(icon));
+        action->setIconText(text);
+        action->setToolTip(action->text().remove(QLatin1Char('&')));
+        bar->addAction(action);
+        if (auto* button = qobject_cast<QToolButton*>(bar->widgetForAction(action))) {
+            button->setText(text);
+            button->setToolTip(action->text().remove(QLatin1Char('&')));
+            button->setAccessibleName(button->toolTip());
+        }
     }
 }
 
@@ -46,14 +83,20 @@ void EditorWindow::buildUi() {
     newAction->setObjectName(QStringLiteral("newConfiguration"));
     newAction->setShortcut(QKeySequence::New);
     connect(newAction, &QAction::triggered, this, &EditorWindow::newFile);
+    renameAction_ = fileMenu->addAction(tr("&Rename configuration…"));
+    renameAction_->setObjectName(QStringLiteral("renameConfiguration"));
+    renameAction_->setShortcut(QKeySequence(Qt::Key_F2));
+    connect(renameAction_, &QAction::triggered, this, &EditorWindow::renameFile);
     saveAction_ = fileMenu->addAction(tr("&Save"));
     saveAction_->setObjectName(QStringLiteral("saveConfiguration"));
     saveAction_->setShortcut(QKeySequence::Save);
     connect(saveAction_, &QAction::triggered, this, [this] { saveFile(); });
     fileMenu->addSeparator();
     auto* directoryAction = fileMenu->addAction(tr("Choose &Data folder…"));
+    directoryAction->setObjectName(QStringLiteral("chooseDataDirectory"));
     connect(directoryAction, &QAction::triggered, this, &EditorWindow::chooseDirectory);
     auto* rescanAction = fileMenu->addAction(tr("&Rescan files"));
+    rescanAction->setObjectName(QStringLiteral("rescanConfigurations"));
     rescanAction->setShortcut(QKeySequence::Refresh);
     connect(rescanAction, &QAction::triggered, this, &EditorWindow::scanFiles);
     fileMenu->addSeparator();
@@ -72,19 +115,6 @@ void EditorWindow::buildUi() {
     connect(duplicateAction_, &QAction::triggered, this, &EditorWindow::duplicateEntry);
     connect(removeAction_, &QAction::triggered, this, &EditorWindow::removeEntry);
 
-    auto* toolbar = addToolBar(tr("Configuration"));
-    toolbar->setMovable(false);
-    toolbar->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    toolbar->addAction(newAction);
-    toolbar->addAction(saveAction_);
-    toolbar->addSeparator();
-    toolbar->addAction(rescanAction);
-    toolbar->addAction(directoryAction);
-    toolbar->addSeparator();
-    toolbar->addAction(addAction_);
-    toolbar->addAction(duplicateAction_);
-    toolbar->addAction(removeAction_);
-
     auto* central = new QWidget(this);
     auto* layout = new QVBoxLayout(central);
     directoryLabel_ = new QLabel(central);
@@ -97,12 +127,21 @@ void EditorWindow::buildUi() {
     auto* fileLayout = new QVBoxLayout(filePanel);
     fileLayout->setContentsMargins(0, 0, 0, 0);
     fileLayout->addWidget(new QLabel(tr("Configuration files"), filePanel));
+    auto* fileActions = actionBar(filePanel, QStringLiteral("fileActions"));
+    fileActions->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    addPanelAction(fileActions, newAction, tr("New"), QStyle::SP_FileIcon);
+    addPanelAction(fileActions, renameAction_, tr("Rename"), QStyle::SP_FileDialogInfoView);
+    addPanelAction(fileActions, rescanAction, tr("Rescan"), QStyle::SP_BrowserReload);
+    addPanelAction(fileActions, directoryAction, tr("Folder…"), QStyle::SP_DirOpenIcon);
+    fileLayout->addWidget(fileActions);
     search_ = new QLineEdit(filePanel);
     search_->setPlaceholderText(tr("Filter files…"));
     search_->setClearButtonEnabled(true);
     fileLayout->addWidget(search_);
     files_ = new QListWidget(filePanel);
     files_->setObjectName(QStringLiteral("configurationFiles"));
+    files_->setContextMenuPolicy(Qt::ActionsContextMenu);
+    files_->addAction(renameAction_);
     fileLayout->addWidget(files_);
     auto* discoveryHelp = new QLabel(tr("Finds all *_MS.json files below this folder.\n"
                                        "The plugin loads configurations in Data itself."), filePanel);
@@ -113,6 +152,12 @@ void EditorWindow::buildUi() {
     auto* entryLayout = new QVBoxLayout(entryPanel);
     entryLayout->setContentsMargins(0, 0, 0, 0);
     entryLayout->addWidget(new QLabel(tr("Swap entries"), entryPanel));
+    auto* entryActions = actionBar(entryPanel, QStringLiteral("entryActions"));
+    entryActions->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    addPanelAction(entryActions, addAction_, tr("Add"), QStyle::SP_FileDialogNewFolder);
+    addPanelAction(entryActions, duplicateAction_, tr("Duplicate"), QStyle::SP_FileDialogDetailedView);
+    addPanelAction(entryActions, removeAction_, tr("Remove"), QStyle::SP_TrashIcon);
+    entryLayout->addWidget(entryActions);
     entryList_ = new QListWidget(entryPanel);
     entryList_->setObjectName(QStringLiteral("swapEntries"));
     entryList_->setWordWrap(true);
@@ -123,18 +168,22 @@ void EditorWindow::buildUi() {
     formLayout->setContentsMargins(0, 0, 0, 0);
     documentLabel_ = new QLabel(formPanel);
     documentLabel_->setWordWrap(true);
-    formLayout->addWidget(documentLabel_);
-    scroll_ = new QScrollArea(formPanel);
-    scroll_->setWidgetResizable(true);
-    scroll_->setFrameShape(QFrame::NoFrame);
-    formLayout->addWidget(scroll_);
+    auto* documentHeading = new QHBoxLayout;
+    documentHeading->addWidget(documentLabel_, 1);
+    auto* documentActions = actionBar(formPanel, QStringLiteral("documentActions"));
+    addPanelAction(documentActions, saveAction_, tr("Save"), QStyle::SP_DialogSaveButton);
+    documentHeading->addWidget(documentActions);
+    formLayout->addLayout(documentHeading);
+    editorLayout_ = new QVBoxLayout;
+    editorLayout_->setContentsMargins(0, 0, 0, 0);
+    formLayout->addLayout(editorLayout_, 1);
     splitter->addWidget(filePanel);
     splitter->addWidget(entryPanel);
     splitter->addWidget(formPanel);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 0);
     splitter->setStretchFactor(2, 1);
-    splitter->setSizes({240, 240, 800});
+    splitter->setSizes({260, 260, 800});
     layout->addWidget(splitter, 1);
     setCentralWidget(central);
 
@@ -257,7 +306,6 @@ bool EditorWindow::openFile(const QString& path) {
     originalSource_ = source;
     currentPath_ = path;
     dirty_ = false;
-    newDocument_ = false;
     populateEntries();
     updateState();
     return true;
@@ -270,12 +318,7 @@ void EditorWindow::newFile() {
     if (path.isEmpty()) {
         return;
     }
-    if (!path.endsWith(QStringLiteral("_MS.json"), Qt::CaseInsensitive)) {
-        if (path.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
-            path.chop(5);
-        }
-        path += QStringLiteral("_MS.json");
-    }
+    path = configurationPath(path);
     path = QFileInfo(path).absoluteFilePath();
     if (QFileInfo::exists(path)) {
         QMessageBox::warning(this, tr("File already exists"),
@@ -290,14 +333,60 @@ void EditorWindow::newFile() {
         QMessageBox::warning(this, tr("File already exists"), tr("Choose a new filename for the new configuration."));
         return;
     }
+    QString error;
+    QByteArray createdSource;
+    if (!ConfigFiles::create(path, createdSource, error)) {
+        QMessageBox::warning(this, tr("Cannot create configuration"), error);
+        return;
+    }
     currentPath_ = path;
-    originalSource_ = QByteArray();
-    entries_ = QJsonArray{blankEntry()};
-    newDocument_ = true;
-    dirty_ = true;
+    originalSource_ = createdSource;
+    entries_ = QJsonArray{};
+    dirty_ = false;
+    if (!discoveredFiles_.contains(path)) discoveredFiles_.append(path);
+    discoveredFiles_.sort(Qt::CaseInsensitive);
+    search_->clear();
     populateFiles();
     populateEntries();
     updateState();
+    statusBar()->showMessage(tr("Created %1").arg(QFileInfo(path).fileName()), 6000);
+}
+
+void EditorWindow::renameFile() {
+    if (currentPath_.isEmpty() || !confirmUnsavedChanges()) {
+        return;
+    }
+    bool accepted = false;
+    auto name = QInputDialog::getText(this, tr("Rename configuration"), tr("New filename:"),
+                                     QLineEdit::Normal, QFileInfo(currentPath_).fileName(), &accepted).trimmed();
+    if (!accepted) {
+        return;
+    }
+    static const QRegularExpression invalidName(QStringLiteral(R"([<>:"/\\|?*\x00-\x1F])"));
+    if (name.isEmpty() || name == QStringLiteral(".") || name == QStringLiteral("..") || name.contains(invalidName)) {
+        QMessageBox::warning(this, tr("Invalid filename"), tr("Enter a filename without folder paths or special filename characters."));
+        return;
+    }
+    name = configurationPath(name);
+    const auto newPath = QFileInfo(currentPath_).dir().absoluteFilePath(name);
+    QString error;
+    if (!ConfigFiles::rename(currentPath_, newPath, originalSource_, error)) {
+        QMessageBox::warning(this, tr("Cannot rename configuration"), error);
+        return;
+    }
+
+    discoveredFiles_.removeAll(currentPath_);
+    if (!discoveredFiles_.contains(newPath)) discoveredFiles_.append(newPath);
+    discoveredFiles_.sort(Qt::CaseInsensitive);
+    currentPath_ = newPath;
+    // A Discard response drops pending edits only once the rename succeeds.
+    entries_ = QJsonDocument::fromJson(originalSource_).array();
+    dirty_ = false;
+    search_->clear();
+    populateFiles();
+    populateEntries(currentEntry_);
+    updateState();
+    statusBar()->showMessage(tr("Renamed to %1").arg(name), 6000);
 }
 
 bool EditorWindow::saveFile() {
@@ -315,7 +404,6 @@ bool EditorWindow::saveFile() {
     }
     originalSource_ = savedSource;
     dirty_ = false;
-    newDocument_ = false;
     if (!discoveredFiles_.contains(currentPath_)) {
         discoveredFiles_.append(currentPath_);
         discoveredFiles_.sort(Qt::CaseInsensitive);
@@ -354,25 +442,21 @@ bool EditorWindow::reportFormErrors() {
 QString EditorWindow::entryLabel(int row) const {
     const auto entry = entries_.at(row).toObject();
     QString description;
-    const auto original = entry.value(QStringLiteral("OriginalModel"));
-    if (original.isString()) {
-        description = original.toString();
-    } else if (original.isArray() && !original.toArray().isEmpty()) {
-        description = original.toArray().first().toString();
-    }
-    if (description.isEmpty()) {
-        for (const auto& key : {QStringLiteral("BaseFormID"), QStringLiteral("ReferenceID")}) {
-            const auto id = entry.value(key);
-            if (id.isString()) {
-                description = id.toString();
-            } else if (id.isDouble()) {
-                description = QString::number(id.toInteger());
-            } else if (id.isArray() && !id.toArray().isEmpty()) {
-                description = tr("%1 filter").arg(key);
+    for (const auto& key : {QStringLiteral("OriginalModel"), QStringLiteral("BaseFormID"), QStringLiteral("ReferenceID")}) {
+        const auto target = entry.value(key);
+        const auto values = target.isArray() ? target.toArray() : QJsonArray{target};
+        for (const auto& value : values) {
+            if (value.isString() && !value.toString().trimmed().isEmpty()) {
+                description = value.toString();
+            } else if (key != QStringLiteral("OriginalModel") && value.isDouble()) {
+                description = QString::number(value.toInteger());
             }
             if (!description.isEmpty()) {
                 break;
             }
+        }
+        if (!description.isEmpty()) {
+            break;
         }
     }
     if (description.isEmpty()) {
@@ -400,12 +484,22 @@ void EditorWindow::selectEntry(int row) {
     }
     loading_ = true;
     currentEntry_ = row;
-    delete scroll_->takeWidget();
+    int activeTab = 0;
+    if (form_) {
+        if (auto* tabs = form_->findChild<QTabWidget*>(QStringLiteral("entryTabs"))) {
+            activeTab = tabs->currentIndex();
+        }
+    }
+    delete editorContent_;
+    editorContent_ = nullptr;
     form_ = nullptr;
     if (row >= 0 && row < entries_.size()) {
         form_ = new JsonForm(plugins_);
         form_->setValue(entries_.at(row).toObject());
-        scroll_->setWidget(form_);
+        editorContent_ = form_;
+        if (auto* tabs = form_->findChild<QTabWidget*>(QStringLiteral("entryTabs"))) {
+            tabs->setCurrentIndex(activeTab);
+        }
         connect(form_, &JsonForm::changed, this, &EditorWindow::formChanged);
     } else {
         auto* empty = new QLabel(currentPath_.isEmpty()
@@ -413,8 +507,9 @@ void EditorWindow::selectEntry(int row) {
                                     : tr("This configuration has no entries. Use Add entry to create a swap."));
         empty->setWordWrap(true);
         empty->setAlignment(Qt::AlignCenter);
-        scroll_->setWidget(empty);
+        editorContent_ = empty;
     }
+    editorLayout_->addWidget(editorContent_);
     loading_ = false;
     updateState();
 }
@@ -469,7 +564,6 @@ void EditorWindow::clearDocument() {
     entries_ = QJsonArray();
     originalSource_ = QByteArray();
     dirty_ = false;
-    newDocument_ = false;
     populateEntries(-1);
 }
 
@@ -477,6 +571,7 @@ void EditorWindow::updateState() {
     const bool open = !currentPath_.isEmpty();
     const bool selected = currentEntry_ >= 0 && currentEntry_ < entries_.size();
     saveAction_->setEnabled(open && dirty_);
+    renameAction_->setEnabled(open);
     addAction_->setEnabled(open);
     duplicateAction_->setEnabled(selected);
     removeAction_->setEnabled(selected);
@@ -485,8 +580,8 @@ void EditorWindow::updateState() {
     const auto name = open ? QFileInfo(currentPath_).fileName() : tr("No configuration selected");
     setWindowTitle(tr("%1%2 — Model Swapper Editor").arg(dirty_ ? QStringLiteral("* ") : QString(), name));
     documentLabel_->setText(open
-                               ? tr("%1%2 · %3 entry/entries").arg(name, newDocument_ ? tr(" (new)") : QString())
-                                     .arg(entries_.size())
+                               ? tr("%1 · %2 %3").arg(name)
+                                     .arg(entries_.size()).arg(entries_.size() == 1 ? tr("entry") : tr("entries"))
                                : name);
 }
 

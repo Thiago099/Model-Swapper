@@ -1,28 +1,35 @@
 
 function(copyOutputs TARGET_FOLDER)
-    # If you specify an <OUTPUT_FOLDER> (including via environment variables)
-    # then we'll copy your mod files into Skyrim or a mod manager for you!
+    cmake_parse_arguments(COPY "" "TARGET;COMMAND_TARGET;SUBDIRECTORY" "" ${ARGN})
+    if(NOT COPY_TARGET)
+        set(COPY_TARGET "${PROJECT_NAME}")
+    endif()
+    if(NOT COPY_COMMAND_TARGET)
+        set(COPY_COMMAND_TARGET "${COPY_TARGET}")
+    endif()
+    if(NOT DEFINED COPY_SUBDIRECTORY)
+        set(COPY_SUBDIRECTORY "SKSE/Plugins")
+    endif()
 
-    # Copy the SKSE plugin .dll files into the SKSE/Plugins/ folder
-    set(DLL_FOLDER "${TARGET_FOLDER}/SKSE/Plugins")
+    get_filename_component(OUTPUT_FOLDER "${TARGET_FOLDER}/${COPY_SUBDIRECTORY}" ABSOLUTE)
 
-    message(STATUS "SKSE plugin output folder: ${DLL_FOLDER}")
+    message(STATUS "${COPY_TARGET} output folder: ${OUTPUT_FOLDER}")
 
     add_custom_command(
-        TARGET "${PROJECT_NAME}"
+        TARGET "${COPY_COMMAND_TARGET}"
         POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E make_directory "${DLL_FOLDER}"
-        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:${PROJECT_NAME}>" "${DLL_FOLDER}/$<TARGET_FILE_NAME:${PROJECT_NAME}>"
-        #COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_LINKER_FILE:${PROJECT_NAME}>" "${DLL_FOLDER}/$<TARGET_LINKER_FILE_NAME:${PROJECT_NAME}>"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${OUTPUT_FOLDER}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:${COPY_TARGET}>" "${OUTPUT_FOLDER}/$<TARGET_FILE_NAME:${COPY_TARGET}>"
         VERBATIM
     )
 
-    # If you perform a "Debug" build, also copy .pdb file (for debug symbols)
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Copy each target's own linker symbols in Debug, including multi-config builds.
+    if(MSVC)
         add_custom_command(
-            TARGET "${PROJECT_NAME}"
+            TARGET "${COPY_COMMAND_TARGET}"
             POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_PDB_FILE:${PROJECT_NAME}>" "${DLL_FOLDER}/$<TARGET_PDB_FILE_NAME:${PROJECT_NAME}>"
+            COMMAND "$<$<CONFIG:Debug>:${CMAKE_COMMAND};-E;copy_if_different;$<TARGET_PDB_FILE:${COPY_TARGET}>;${OUTPUT_FOLDER}/$<TARGET_PDB_FILE_NAME:${COPY_TARGET}>>"
+            COMMAND_EXPAND_LISTS
             VERBATIM
         )
     endif()
