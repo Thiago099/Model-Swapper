@@ -119,6 +119,14 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+# Build the configuration editor even when the plugin target is selected directly.
+# Its output stays in the build tree; copyOutputs only deploys the SKSE plugin.
+add_subdirectory(editor)
+add_dependencies(${PROJECT_NAME} ModelSwapperEditor)
+if(MS_EDITOR_BUILD_TESTS)
+  enable_testing()
+endif()
+
 
 # ---------------------------------------------------- #
 #                        Output                        #

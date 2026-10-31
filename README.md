@@ -57,6 +57,38 @@ Prefer the plugin/local-ID format for installed plugins: raw full runtime IDs ca
 
 [TargetedSwaps_MS.json](examples/TargetedSwaps_MS.json) contains legacy, ID-only, model-array, ID-array, and exclusion examples. It is a template and is not loaded automatically from `examples`. Replace the placeholder plugin names, IDs, and model paths, then copy it into the game's `Data` folder. If you rename it, keep the `_MS.json` suffix.
 
+## Qt6 configuration editor
+
+`ModelSwapperEditor.exe` provides a form for each swap entry. Copy the executable into Skyrim's `Data` folder and launch it there. It uses the executable's folder regardless of the shortcut's working directory. You can also select a different Data folder in the application or launch it with `--data-dir "D:\Games\Skyrim\Data"`.
+
+The file list discovers all `_MS.json` files recursively. The plugin itself reads files directly inside `Data`; configurations in subfolders are shown for editing but must be moved to `Data` to be loaded by the plugin. The editor's filename search and discovery are case insensitive; use the exact `_MS.json` suffix when creating files for the plugin.
+
+Select a file, then a swap entry. You can create configurations and add, duplicate, or remove entries. The forms cover original models, replacement variants, all four inclusion/exclusion ID filters, and `ActiveTimeSpan` (`dd-MM~dd-MM`). Optional-field checkboxes control whether a property is saved. Original models and IDs support single values or lists, including empty ID lists.
+
+Each plugin/local ID has an editable dropdown populated with `.esm`, `.esp`, and `.esl` files in the Data folder, plus a separate hexadecimal Form ID input. Plugin names absent from the folder remain editable. Full runtime IDs can also be entered as hexadecimal strings or decimal numbers. The editor checks ID syntax and ranges; the game resolves load order, record existence, and ESP light-plugin flags when loading the configuration.
+
+Additional JSON properties have recursive forms for objects, lists, text, numbers, booleans, and null. Saving preserves these properties and the scalar/list forms of existing fields, and formats the file as indented JSON. Invalid configuration values produce errors before saving. Unsaved changes are protected when switching files or closing; saves also detect external file changes and replace the file atomically.
+
+The editor builds alongside the plugin, including when building the `ModelSwapper` target explicitly:
+
+```powershell
+cmake --preset release
+cmake --build build/release --target ModelSwapper
+```
+
+Run these commands from an x64 Visual Studio developer environment with `VCPKG_ROOT` set. The vcpkg manifest includes Qt6 Widgets (`qtbase`). The existing static Windows preset builds Qt into the executable. The resulting editor is at `build/release/editor/ModelSwapperEditor.exe`. It stays in the build folder; the plugin's automatic game/mod-folder copy only deploys the plugin DLL and its debug symbols. Copy the editor to `Data` manually when ready.
+
+To build the editor independently with an existing Qt6 installation:
+
+```powershell
+cmake -S editor -B build/editor -DCMAKE_PREFIX_PATH="C:/Qt/6.x/msvc2022_64"
+cmake --build build/editor --config Release
+```
+
+Use a Qt installation matching your compiler and runtime. For a shared Qt build, distribute its runtime libraries with the editor following [Qt's Windows deployment instructions](https://doc.qt.io/qt-6/windows-deployment.html). The normal static preset does not need separate Qt DLLs.
+
+Editor tests are available with `-DMS_EDITOR_BUILD_TESTS=ON`; run `ctest --test-dir build/release/editor --output-on-failure` after building the test targets, or use your standalone editor build directory. The tests cover file discovery, JSON validation and preservation, form controls, and unsaved-change handling.
+
 ## Environment variables
 
 [How to set up envioriment variables](https://gist.github.com/Thiago099/b45ec7832fb754325b29a61006bcd10c)

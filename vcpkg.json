@@ -9,7 +9,12 @@
     "spdlog",
     "nlohmann-json",
     "rapidcsv",
-    "clib-util"
+    "clib-util",
+    {
+      "name": "qtbase",
+      "default-features": false,
+      "features": ["widgets"]
+    }
   ],
   "overrides": [
     {
