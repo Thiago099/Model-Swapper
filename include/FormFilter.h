@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <functional>
@@ -7,19 +8,34 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 struct FormFilter {
-    std::optional<std::uint32_t> baseFormID;
-    std::optional<std::uint32_t> referenceID;
+    using IDs = std::optional<std::vector<std::uint32_t>>;
+
+    IDs baseFormID;
+    IDs referenceID;
+    IDs excludeBaseFormID;
+    IDs excludeReferenceID;
 
     bool Matches(std::uint32_t baseID, std::uint32_t refID) const {
-        return (!baseFormID || *baseFormID == baseID) &&
-               (!referenceID || *referenceID == refID);
+        return (!baseFormID || Contains(baseFormID, baseID)) &&
+               (!referenceID || Contains(referenceID, refID)) &&
+               !Contains(excludeBaseFormID, baseID) &&
+               !Contains(excludeReferenceID, refID);
     }
 
     bool IsScoped() const {
-        return baseFormID.has_value() || referenceID.has_value();
+        return baseFormID.has_value() || referenceID.has_value() ||
+               (excludeBaseFormID && !excludeBaseFormID->empty()) ||
+               (excludeReferenceID && !excludeReferenceID->empty());
+    }
+
+private:
+    static bool Contains(const IDs& ids, std::uint32_t id) {
+        return ids && std::find(ids->begin(), ids->end(), id) != ids->end();
     }
 };
 
@@ -75,19 +91,32 @@ namespace FormFilters {
         return result != 0;
     }
 
-    inline bool ReadID(const nlohmann::json& entry, std::string_view field,
-                      std::optional<std::uint32_t>& result, const Resolver& resolve = {}) {
+    inline bool ReadIDs(const nlohmann::json& entry, std::string_view field,
+                       FormFilter::IDs& result, const Resolver& resolve = {}) {
         auto value = entry.find(std::string(field));
         if (value == entry.end()) {
             result.reset();
             return true;
         }
 
-        std::uint32_t id;
-        if (!ParseID(*value, id, resolve)) {
-            return false;
+        std::vector<std::uint32_t> ids;
+        if (value->is_array()) {
+            ids.reserve(value->size());
+            for (const auto& element : *value) {
+                std::uint32_t id;
+                if (!ParseID(element, id, resolve)) {
+                    return false;
+                }
+                ids.push_back(id);
+            }
+        } else {
+            std::uint32_t id;
+            if (!ParseID(*value, id, resolve)) {
+                return false;
+            }
+            ids.push_back(id);
         }
-        result = id;
+        result = std::move(ids);
         return true;
     }
 }

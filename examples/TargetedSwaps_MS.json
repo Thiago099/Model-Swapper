@@ -26,5 +26,30 @@
     ],
     "BaseFormID": "Example.esp|001234",
     "ReferenceID": "Example.esp|005678"
+  },
+  {
+    "OriginalModel": "Example\\ArrayOriginal.nif",
+    "Variants": [
+      "Example\\ArrayVariant.nif"
+    ],
+    "BaseFormID": ["Example.esp|001234", "Example.esp|001235"],
+    "ReferenceID": ["Example.esp|005678", "Example.esp|005679"]
+  },
+  {
+    "OriginalModel": "Example\\ExcludedOriginal.nif",
+    "Variants": [
+      "Example\\ExcludedVariant.nif"
+    ],
+    "ExcludeBaseFormID": "Example.esp|001234",
+    "ExcludeReferenceID": ["Example.esp|005678", "Example.esp|005679"]
+  },
+  {
+    "OriginalModel": "Example\\CombinedExclusionOriginal.nif",
+    "Variants": [
+      "Example\\CombinedExclusionVariant.nif"
+    ],
+    "BaseFormID": ["Example.esp|001234", "Example.esp|001235"],
+    "ExcludeBaseFormID": ["Example.esp|001235"],
+    "ExcludeReferenceID": "Example.esp|005678"
   }
 ]

@@ -85,12 +85,20 @@ void Persistence::Install() {
                     }
                     return handler->LookupFormID(localID, plugin);
                 };
-                if (!FormFilters::ReadID(item, "BaseFormID", filter.baseFormID, resolve)) {
+                if (!FormFilters::ReadIDs(item, "BaseFormID", filter.baseFormID, resolve)) {
                     logger::error("error processing item {} on file {}: invalid or unresolved BaseFormID", i, filename);
                     continue;
                 }
-                if (!FormFilters::ReadID(item, "ReferenceID", filter.referenceID, resolve)) {
+                if (!FormFilters::ReadIDs(item, "ReferenceID", filter.referenceID, resolve)) {
                     logger::error("error processing item {} on file {}: invalid or unresolved ReferenceID", i, filename);
+                    continue;
+                }
+                if (!FormFilters::ReadIDs(item, "ExcludeBaseFormID", filter.excludeBaseFormID, resolve)) {
+                    logger::error("error processing item {} on file {}: invalid or unresolved ExcludeBaseFormID", i, filename);
+                    continue;
+                }
+                if (!FormFilters::ReadIDs(item, "ExcludeReferenceID", filter.excludeReferenceID, resolve)) {
+                    logger::error("error processing item {} on file {}: invalid or unresolved ExcludeReferenceID", i, filename);
                     continue;
                 }
 
