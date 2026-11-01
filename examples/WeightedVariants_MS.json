@@ -1,0 +1,10 @@
+[
+  {
+    "OriginalModel": "Example\\Original.nif",
+    "Variants": [
+      { "Model": "Example\\First.nif", "Weight": 0.5 },
+      { "Model": "Example\\Second.nif", "Weight": 1.5 },
+      { "Model": "Example\\Disabled.nif", "Weight": 0.0 }
+    ]
+  }
+]

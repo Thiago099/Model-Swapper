@@ -125,6 +125,56 @@ namespace {
         }
     }
 
+    void validateVariants(const QJsonValue& value, const QString& path, QStringList& errors) {
+        static const QRegularExpression emptyModelPrefix(QStringLiteral("\\Ameshes(?:-|[\\\\/]+)\\z"),
+                                                          QRegularExpression::CaseInsensitiveOption);
+        if (!value.isArray()) {
+            errors.append(path + QStringLiteral(": use an array of model paths or weighted model objects."));
+            return;
+        }
+        const auto variants = value.toArray();
+        if (variants.isEmpty()) {
+            errors.append(path + QStringLiteral(": add at least one model path."));
+            return;
+        }
+        bool hasStrings = false;
+        bool hasObjects = false;
+        bool validWeights = true;
+        bool hasPositiveWeight = false;
+        for (qsizetype index = 0; index < variants.size(); ++index) {
+            const auto variant = variants.at(index);
+            const auto itemPath = path + QStringLiteral("[%1]").arg(index);
+            if (variant.isString()) {
+                hasStrings = true;
+                if (variant.toString().trimmed().isEmpty()) {
+                    errors.append(itemPath + QStringLiteral(": enter a nonempty model path."));
+                }
+            } else if (variant.isObject()) {
+                hasObjects = true;
+                const auto object = variant.toObject();
+                const auto model = object.value(QStringLiteral("Model"));
+                if (!model.isString() || model.toString().trimmed().isEmpty() ||
+                    emptyModelPrefix.match(model.toString()).hasMatch()) {
+                    errors.append(itemPath + QStringLiteral(".Model: enter a nonempty model path."));
+                }
+                const auto weight = object.value(QStringLiteral("Weight"));
+                if (!weight.isDouble() || !std::isfinite(weight.toDouble()) || weight.toDouble() < 0.0) {
+                    validWeights = false;
+                    errors.append(itemPath + QStringLiteral(".Weight: use a finite floating-point number of 0 or greater, for example 1.5."));
+                } else if (weight.toDouble() > 0.0) {
+                    hasPositiveWeight = true;
+                }
+            } else {
+                errors.append(itemPath + QStringLiteral(": use a model path or an object with Model and Weight."));
+            }
+        }
+        if (hasStrings && hasObjects) {
+            errors.append(path + QStringLiteral(": use either model paths or weighted model objects throughout the list."));
+        } else if (hasObjects && validWeights && !hasPositiveWeight) {
+            errors.append(path + QStringLiteral(": at least one model must have a weight greater than 0."));
+        }
+    }
+
     bool validTimeSpan(const QJsonValue& value) {
         if (!value.isString()) {
             return false;
@@ -451,7 +501,7 @@ namespace ConfigFiles {
                     errors.append(prefix + QStringLiteral(".Priority: use a finite floating-point number, for example 1.5."));
                 }
             }
-            validateModels(entry.value(QStringLiteral("Variants")), prefix + QStringLiteral(".Variants"), false, errors);
+            validateVariants(entry.value(QStringLiteral("Variants")), prefix + QStringLiteral(".Variants"), errors);
             if (entry.contains(QStringLiteral("OriginalModel"))) {
                 validateModels(entry.value(QStringLiteral("OriginalModel")), prefix + QStringLiteral(".OriginalModel"), true, errors);
             } else if (!entry.contains(QStringLiteral("BaseFormID")) && !entry.contains(QStringLiteral("ReferenceID"))) {

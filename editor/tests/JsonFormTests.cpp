@@ -243,6 +243,12 @@ void testInvalidValuesCanBeRepaired() {
     button(field(form, "Variants"), "Use list")->click();
     processDeletes();
     require(form.value().value("Variants").toArray() == QJsonArray{"Replacement.nif"}, "Malformed scalar Variants can be repaired");
+    button(field(form, "Variants"), "Use weight")->click();
+    processDeletes();
+    require(form.value().value("Variants").toArray() == QJsonArray{QJsonObject{{"Model", "Replacement.nif"}, {"Weight", 1.0}}},
+            "Repairing scalar Variants must enable the weight toggle for the resulting list");
+    button(field(form, "Variants"), "Uniform")->click();
+    processDeletes();
     button(field(form, "BaseFormID"), "Reset field")->click();
     processDeletes();
     require(form.value().value("BaseFormID").isString(), "Malformed ID type can be reset to an editable ID");
@@ -537,6 +543,149 @@ void testListControlsPreserveUnknownData() {
     require(form.value().value("ExtraList") == initial.value("ExtraList"),
             "Known-list rebuilds must never discard or modify unknown JSON properties");
 }
+
+void testWeightedVariants() {
+    JsonForm form({"Skyrim.esm"});
+    const QJsonObject initial{{"OriginalModel", QJsonArray{"Original.nif", "Other.nif"}},
+                             {"Variants", QJsonArray{"First.nif", "Second.nif"}},
+                             {"Extension", QJsonObject{{"keep", true}}}};
+    form.setValue(initial);
+    form.resize(1100, 750);
+    form.show();
+    QCoreApplication::processEvents();
+    int changes = 0;
+    QObject::connect(&form, &JsonForm::changed, [&changes] { ++changes; });
+    auto* variants = field(form, "Variants");
+    require(form.value() == initial && variants->findChildren<QLineEdit*>().size() == 2,
+            "Uniform variants must retain their existing compact paths and JSON");
+    button(variants, "Use weight")->click();
+    processDeletes();
+    QCoreApplication::processEvents();
+    auto expected = initial;
+    expected.insert("Variants", QJsonArray{QJsonObject{{"Model", "First.nif"}, {"Weight", 1.0}},
+                                          QJsonObject{{"Model", "Second.nif"}, {"Weight", 1.0}}});
+    require(form.value() == expected && changes == 1 && button(variants, "Uniform"),
+            "Use weight must convert every model with default numeric weight one and notify once");
+    require(variants->findChildren<QGroupBox*>().isEmpty(),
+            "Weighted variants must stay compact without nested property groups");
+    const auto models = variants->findChildren<QLineEdit*>("variantModel");
+    const auto weights = variants->findChildren<QLineEdit*>("variantWeight");
+    require(models.size() == 2 && weights.size() == 2 && weights.first()->accessibleName() == "Weight",
+            "Each weighted row must expose an accessible model and decimal weight input");
+    require(models.first()->width() > weights.first()->width() * 2.5 &&
+                models.first()->width() < weights.first()->width() * 3.5 &&
+                models.first()->mapTo(variants, QPoint()).y() == weights.first()->mapTo(variants, QPoint()).y() &&
+                models.first()->mapTo(variants, QPoint()).x() < weights.first()->mapTo(variants, QPoint()).x(),
+            "Weight must share the model row to its right at roughly one-third the path input width");
+    models.first()->setText("Edited.nif");
+    weights.first()->setText("0.5");
+    weights.last()->setText("1.5");
+    expected.insert("Variants", QJsonArray{QJsonObject{{"Model", "Edited.nif"}, {"Weight", 0.5}},
+                                          QJsonObject{{"Model", "Second.nif"}, {"Weight", 1.5}}});
+    require(form.errors().isEmpty() && form.value() == expected && changes == 4,
+            "Model edits and fractional weights must update numeric object values and notify");
+    button(variants, "Add model")->click();
+    processDeletes();
+    auto added = expected.value("Variants").toArray();
+    added.append(QJsonObject{{"Model", ""}, {"Weight", 1.0}});
+    require(form.value().value("Variants").toArray() == added,
+            "Add model in weighted mode must append a weighted object without changing previous rows");
+    removeButtons(variants).last()->click();
+    processDeletes();
+    require(form.value() == expected, "Removing an added weighted row must preserve fractional edits");
+    form.setValue(expected);
+    processDeletes();
+    variants = field(form, "Variants");
+    require(form.value() == expected && button(variants, "Uniform") &&
+                variants->findChildren<QLineEdit*>("variantWeight").first()->text() == "0.5",
+            "Loading weighted objects must select weighted mode and preserve decimals");
+    button(variants, "Uniform")->click();
+    processDeletes();
+    expected.insert("Variants", QJsonArray{"Edited.nif", "Second.nif"});
+    require(form.value() == expected && button(variants, "Use weight") &&
+                variants->findChildren<QLineEdit*>("variantWeight").isEmpty(),
+            "Uniform must retain paths, remove weight properties and hide weight inputs");
+    require(field(form, "OriginalModel")->findChildren<QLineEdit*>().size() == 2 &&
+                field(form, "OriginalModel")->findChild<QPushButton*>("variantWeightMode") == nullptr,
+            "Original-model lists must remain independent of weighted variants");
+
+    button(variants, "Use weight")->click();
+    processDeletes();
+    while (!removeButtons(variants).isEmpty()) {
+        removeButtons(variants).first()->click();
+        processDeletes();
+    }
+    require(form.value().value("Variants").toArray().isEmpty() && button(variants, "Uniform"),
+            "Removing the final model must retain the selected weighted mode");
+    button(variants, "Add model")->click();
+    processDeletes();
+    require(form.value().value("Variants").toArray() == QJsonArray{QJsonObject{{"Model", ""}, {"Weight", 1.0}}},
+            "Adding after an empty weighted list must still create a weighted object");
+    auto* included = variants->findChild<QCheckBox*>();
+    included->setChecked(false);
+    require(!form.value().contains("Variants"), "Disabling weighted variants must omit the field");
+    included->setChecked(true);
+    require(button(variants, "Uniform") && form.value().value("Variants").toArray().first().isObject(),
+            "Reenabling variants must preserve their weighted mode");
+}
+
+void testWeightedVariantValidationAndPreservation() {
+    JsonForm form({"Skyrim.esm"});
+    const QJsonObject object{{"Model", "One.nif"}, {"Weight", 0.25},
+                             {"Extra", QJsonObject{{"nested", QJsonArray{1, true, "keep"}}}}};
+    QJsonObject initial{{"OriginalModel", "Original.nif"}, {"Variants", QJsonArray{object}}};
+    form.setValue(initial);
+    processDeletes();
+    require(form.value() == initial && form.errors().isEmpty(),
+            "Weighted variant objects must round-trip unknown properties without controls");
+    auto* variants = field(form, "Variants");
+    auto* weight = variants->findChild<QLineEdit*>("variantWeight");
+    for (const auto& text : {QString("0"), QString("0.125"), QString("1.5e-4"), QString("1e308")}) {
+        weight->setText(text);
+        require(form.errors().isEmpty() && form.value().value("Variants").toArray().first().toObject().value("Weight").toDouble() == text.toDouble(),
+                "Weights must accept zero, fractional, exponent and large finite numeric input");
+    }
+    for (const auto& text : {QString{}, QString("-0.5"), QString("NaN"), QString("Infinity"),
+                             QString("1e999"), QString("\"1.5\""), QString("true"), QString("[1.5]")}) {
+        weight->setText(text);
+        require(form.errors().join('\n').contains("Variants[0].Weight") &&
+                    form.value().value("Variants").toArray().first().toObject().value("Weight").isDouble(),
+                "Invalid weights must report their row without converting numeric weights into text");
+    }
+    weight->setText("0.75");
+    auto edited = object;
+    edited.insert("Weight", 0.75);
+    initial.insert("Variants", QJsonArray{edited});
+    require(form.value() == initial, "Weight edits must preserve unknown object properties");
+    button(variants, "Add model")->click();
+    processDeletes();
+    removeButtons(variants).last()->click();
+    processDeletes();
+    require(form.value() == initial && form.errors().isEmpty(),
+            "Weighted list rebuilds must preserve unknown object properties and corrected input");
+
+    for (const auto& malformed : QJsonArray{QJsonObject{{"Model", "One.nif"}},
+                                           QJsonObject{{"Model", "One.nif"}, {"Weight", "1.5"}},
+                                           QJsonObject{{"Model", 42}, {"Weight", true}},
+                                           QJsonObject{{"Weight", 0.5}},
+                                           "Legacy.nif"}) {
+        auto loaded = initial;
+        loaded.insert("Variants", QJsonArray{malformed});
+        form.setValue(loaded);
+        processDeletes();
+        require(form.value() == loaded, "Loading malformed variant fields must never silently replace their values");
+    }
+    auto repaired = initial;
+    repaired.insert("Variants", QJsonArray{QJsonObject{{"Weight", "bad"}}});
+    form.setValue(repaired);
+    processDeletes();
+    variants = field(form, "Variants");
+    variants->findChild<QLineEdit*>("variantModel")->setText("Repaired.nif");
+    variants->findChild<QLineEdit*>("variantWeight")->setText("1.25");
+    require(form.errors().isEmpty() && form.value().value("Variants").toArray() ==
+                QJsonArray{QJsonObject{{"Model", "Repaired.nif"}, {"Weight", 1.25}}},
+            "Malformed weighted objects must be repairable through the compact inputs");
+}
 }
 
 int main(int argc, char** argv) {
@@ -552,6 +701,8 @@ int main(int argc, char** argv) {
         testUnknownPropertiesPreservedWithoutControls();
         testTabPartitionAndNavigation();
         testListControlsPreserveUnknownData();
+        testWeightedVariants();
+        testWeightedVariantValidationAndPreservation();
         std::cout << "JsonForm tests passed\n";
         return 0;
     } catch (const std::exception& error) {

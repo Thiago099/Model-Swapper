@@ -211,6 +211,99 @@ namespace {
                 "Validation must identify the entry and offending field");
     }
 
+    void testWeightedVariantsValidation() {
+        auto entry = validEntry();
+        const QJsonObject weighted{{"Model", "Example\\Weighted.nif"}, {"Weight", 0.5},
+                                   {"Extra", QJsonObject{{"preserved", true}}}};
+        for (const double weight : {0.25, 1.0, 1.5, 1e-12, std::numeric_limits<double>::max()}) {
+            auto variant = weighted;
+            variant.insert("Weight", weight);
+            entry.insert("Variants", QJsonArray{variant, QJsonObject{{"Model", "Disabled.nif"}, {"Weight", 0.0}}});
+            require(accepts(entry), "Weighted variants must accept finite decimal weights and zero-weight models");
+        }
+        for (const auto& model : {QStringLiteral("Example\\Weighted.nif"), QStringLiteral("Meshes/Example.nif"),
+                                  QStringLiteral("meshes-old.nif"), QStringLiteral("meshes"), QStringLiteral("meshes--")}) {
+            auto variant = weighted;
+            variant.insert("Model", model);
+            entry.insert("Variants", QJsonArray{variant});
+            require(accepts(entry), "Weighted model path checks must preserve paths with a nonempty normalized key");
+        }
+        const QJsonArray invalidWeights{QStringLiteral("1.5"), QStringLiteral(""), true, false, QJsonValue::Null,
+                                       QJsonArray{1.5}, QJsonObject{}, -0.25,
+                                       QJsonValue(std::numeric_limits<double>::infinity()),
+                                       QJsonValue(std::numeric_limits<double>::quiet_NaN())};
+        for (const auto& weight : invalidWeights) {
+            auto variant = weighted;
+            variant.insert("Weight", weight);
+            entry.insert("Variants", QJsonArray{variant});
+            const auto errors = ConfigFiles::validate(QJsonArray{entry});
+            require(errors.size() == 1 && errors.first().contains("Entry [0].Variants[0].Weight"),
+                    "Invalid weights must produce a field-specific error");
+        }
+        auto variant = weighted;
+        variant.remove("Weight");
+        entry.insert("Variants", QJsonArray{variant});
+        require(!accepts(entry), "Weighted variants must specify Weight");
+        for (const auto& model : QJsonArray{QStringLiteral(""), QStringLiteral(" \t\r\n"), QStringLiteral("Meshes/"),
+                                            QStringLiteral("mEsHeS\\"), QStringLiteral("Meshes//\\"), QStringLiteral("meshes-"),
+                                            true, 1.0, QJsonValue::Null, QJsonArray{}, QJsonObject{}}) {
+            variant = weighted;
+            variant.insert("Model", model);
+            entry.insert("Variants", QJsonArray{variant});
+            const auto errors = ConfigFiles::validate(QJsonArray{entry});
+            require(errors.size() == 1 && errors.first().contains("Entry [0].Variants[0].Model"),
+                    "Invalid weighted model paths must produce a field-specific error");
+        }
+        variant = weighted;
+        variant.remove("Model");
+        entry.insert("Variants", QJsonArray{variant});
+        require(!accepts(entry), "Weighted variants must specify Model");
+        variant = weighted;
+        variant.insert("Weight", 0.0);
+        entry.insert("Variants", QJsonArray{variant, variant});
+        require(!accepts(entry), "An all-zero weighted list must fail validation");
+        for (const auto& variants : {QJsonArray{"Uniform.nif", weighted}, QJsonArray{weighted, "Uniform.nif"},
+                                     QJsonArray{weighted, false}, QJsonArray{weighted, QJsonArray{}}}) {
+            entry.insert("Variants", variants);
+            require(!accepts(entry), "Weighted lists must reject mixed strings and objects or other value types");
+        }
+        entry.insert("Variants", weighted);
+        require(!accepts(entry), "A weighted model must still be contained in an array");
+        entry.insert("Variants", QJsonArray{weighted});
+        entry.insert("OriginalModel", QJsonArray{weighted});
+        require(!accepts(entry), "Weighted objects are supported only in Variants");
+    }
+
+    void testWeightedVariantsLoadingAndSaving(const QString& root) {
+        const auto path = root + QStringLiteral("/Weighted_MS.json");
+        auto entry = validEntry();
+        entry.insert("Variants", QJsonArray{
+            QJsonObject{{"Model", "Example\\First.nif"}, {"Weight", 0.5}, {"Extra", QJsonArray{true, "preserved"}}},
+            QJsonObject{{"Model", "Example\\Second.nif"}, {"Weight", 1.75}},
+            QJsonObject{{"Model", "Example\\Disabled.nif"}, {"Weight", 0.0}}});
+        entry.insert("Extra", "preserved");
+        const QJsonArray expected{entry};
+        QByteArray saved;
+        QString error;
+        require(ConfigFiles::save(path, expected, QByteArray(), saved, error), "Weighted configurations must save");
+        QJsonArray entries;
+        QByteArray loaded;
+        require(ConfigFiles::load(path, entries, loaded, error) && entries == expected && loaded == saved,
+                "Weighted configurations must reload with numeric decimals, paths, zero weights and unknown properties intact");
+        const auto variants = entries.first().toObject().value("Variants").toArray();
+        require(variants.first().toObject().value("Weight").isDouble() &&
+                    variants.at(1).toObject().value("Weight").toDouble() == 1.75,
+                "Saving weights must preserve JSON numbers rather than quoted strings");
+        auto invalid = entry;
+        invalid.insert("Variants", QJsonArray{QJsonObject{{"Model", "Example\\First.nif"}, {"Weight", -0.5}}});
+        QByteArray rejected;
+        require(!ConfigFiles::save(path, QJsonArray{invalid}, loaded, rejected, error) && readFile(path) == saved,
+                "Invalid weights must prevent saving without altering the existing configuration");
+        writeFile(path, QJsonDocument(QJsonArray{invalid}).toJson());
+        require(ConfigFiles::load(path, entries, loaded, error) && !ConfigFiles::validate(entries).isEmpty(),
+                "Malformed weighted fields must still load for repair");
+    }
+
     void testPriorityValidation() {
         auto entry = validEntry();
         require(accepts(entry), "Omitted priority must remain valid with runtime default zero");
@@ -644,9 +737,11 @@ int main(int argc, char** argv) {
         testSourceDirectoryRescan(directory.path());
         testSourceDirectoryConflicts(directory.path());
         testValidation();
+        testWeightedVariantsValidation();
         testPriorityValidation();
         testConditionValidation();
         testLoadingAndSaving(directory.path());
+        testWeightedVariantsLoadingAndSaving(directory.path());
         testRepeatedSaveSnapshots(directory.path());
         testInPlaceSaves(directory.path());
         testImmediateCreation(directory.path());

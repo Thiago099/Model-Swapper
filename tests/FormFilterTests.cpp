@@ -376,6 +376,69 @@ namespace {
         config->NowOverride = {};
     }
 
+    void TestWeightedSelection() {
+        auto first = MakeVariant("weighted-first.nif", "weighted-first.nif");
+        auto second = MakeVariant("weighted-second.nif", "weighted-second.nif");
+        auto disabled = MakeVariant("weighted-disabled.nif", "weighted-disabled.nif");
+        first.weight = 0.25;
+        second.weight = 0.75;
+        disabled.weight = 0.0;
+        models choices{{"weighted-original.nif", {&first, &second, &disabled}}};
+        std::size_t firstCount = 0;
+        for (std::uint32_t ref = 1; ref <= 4096; ++ref) {
+            const auto selected = find(choices, "weighted-original.nif", ref);
+            Require(selected == &first || selected == &second, "zero-weight variants are never selected");
+            Require(find(choices, "weighted-original.nif", ref) == selected,
+                "weighted selection is stable for the same reference seed");
+            firstCount += selected == &first;
+        }
+        Require(firstCount > 850 && firstCount < 1200, "fractional weights produce the expected relative frequency");
+
+        first.weight = second.weight = 2.5;
+        const std::array<variant*, 2> equal{&first, &second};
+        for (std::uint32_t ref = 1; ref <= 128; ++ref) {
+            std::mt19937 engine(ref);
+            std::uniform_int_distribution<std::uint32_t> distribution(0, 1);
+            Require(find(choices, "weighted-original.nif", ref) == equal[distribution(engine)],
+                "equal positive weights preserve the exact legacy seeded selection");
+        }
+
+        first.weight = 1.5e308;
+        second.weight = 1e308;
+        firstCount = 0;
+        for (std::uint32_t ref = 1; ref <= 4096; ++ref) {
+            const auto selected = find(choices, "weighted-original.nif", ref);
+            Require(selected == &first || selected == &second, "large finite weights remain selectable without overflow");
+            firstCount += selected == &first;
+        }
+        Require(firstCount > 2200 && firstCount < 2700, "normalization preserves relative weights when their sum would overflow");
+
+        first.weight = 0.0;
+        second.weight = 0.0;
+        Require(!find(choices, "weighted-original.nif", 1), "an all-zero eligible pool returns no swap");
+        first.priority = 2.0;
+        second.priority = 1.0;
+        second.weight = 1.0;
+        Require(!find(choices, "weighted-original.nif", 1),
+            "a zero-weight highest-priority pool does not fall back to lower-priority variants");
+        first.filter.baseFormID = std::vector<std::uint32_t>{0xF610};
+        Require(find(choices, "weighted-original.nif", 1, 0xF611) == &second,
+            "nonmatching higher-priority variants are filtered before weighting");
+
+        const auto dates = Time::fromDatePairString("01-01~31-01");
+        second.startDate = dates.first;
+        second.endDate = dates.second;
+        auto config = Config::GetSingleton();
+        config->NowOverride = Time::fromString("2026-10-06 12:00:00");
+        Require(!find(choices, "weighted-original.nif", 1, 0xF611),
+            "weighted selection preserves temporal inactivity");
+        config->BypassTemporalActivation = true;
+        Require(find(choices, "weighted-original.nif", 1, 0xF611) == &second,
+            "weighted selection preserves temporal bypass");
+        config->BypassTemporalActivation = false;
+        config->NowOverride = {};
+    }
+
     void TestIDOnlySelection() {
         auto exact = MakeVariant("id-only-exact.nif", "id-only-exact.nif");
         auto independent = MakeVariant("id-only-any-path.nif", "id-only-any-path.nif", 0xD000);
@@ -1004,6 +1067,89 @@ namespace {
         std::filesystem::current_path(previousDirectory);
     }
 
+    void TestWeightedLoading() {
+        const auto fixtureRoot = std::filesystem::path(__FILE__).parent_path().parent_path() / "build/tests/weight-fixture";
+        std::filesystem::create_directories(fixtureRoot / "Data/SKSE/Plugins");
+        const auto previousDirectory = std::filesystem::current_path();
+        std::filesystem::current_path(fixtureRoot);
+        auto entries = json::parse(R"([
+            {"OriginalModel":"loader-weight-ratio.nif","Variants":[{"Model":"loader-weight-first.nif","Weight":0.25},{"Model":"loader-weight-second.nif","Weight":0.75},{"Model":"loader-weight-disabled.nif","Weight":0.0}]},
+            {"OriginalModel":"loader-weight-equal.nif","Variants":[{"Model":"loader-weight-equal-first.nif","Weight":1.5},{"Model":"loader-weight-equal-second.nif","Weight":1.5}]},
+            {"OriginalModel":"loader-weight-zero.nif","Variants":[{"Model":"loader-weight-zero-target.nif","Weight":0.0}]},
+            {"OriginalModel":"loader-weight-mixed.nif","Variants":["loader-weight-mixed-string.nif",{"Model":"loader-weight-mixed-object.nif","Weight":1.0}]},
+            {"OriginalModel":"loader-weight-mixed-reverse.nif","Variants":[{"Model":"loader-weight-mixed-reverse-object.nif","Weight":1.0},"loader-weight-mixed-reverse-string.nif"]},
+            {"OriginalModel":"loader-weight-invalid-member.nif","Variants":[{"Model":"loader-weight-partial.nif","Weight":1.0},42]},
+            {"OriginalModel":"loader-weight-after-invalid.nif","Variants":[{"Model":"loader-weight-after-invalid-target.nif","Weight":1}]},
+            {"Variants":[{"Model":"loader-weight-id-only-target.nif","Weight":0.125}],"BaseFormID":"F620","ReferenceID":"F621"}
+        ])");
+        const std::vector<json> invalidVariants{
+            json{{"Model", "invalid-weight.nif"}, {"Weight", -0.5}},
+            json{{"Model", "invalid-weight.nif"}, {"Weight", "1.5"}},
+            json{{"Model", "invalid-weight.nif"}, {"Weight", true}},
+            json{{"Model", "invalid-weight.nif"}, {"Weight", nullptr}},
+            json{{"Model", "invalid-weight.nif"}},
+            json{{"Model", ""}, {"Weight", 1.0}},
+            json{{"Model", " \t\r\n\f\v"}, {"Weight", 1.0}},
+            json{{"Model", "Meshes/"}, {"Weight", 1.0}},
+            json{{"Model", false}, {"Weight", 1.0}},
+            json{{"Weight", 1.0}}
+        };
+        for (std::size_t i = 0; i < invalidVariants.size(); ++i) {
+            entries.push_back(json{{"OriginalModel", "loader-weight-invalid-" + std::to_string(i) + ".nif"},
+                {"Variants", json::array({json{{"Model", "loader-weight-partial.nif"}, {"Weight", 1.0}}, invalidVariants[i]})}});
+        }
+        {
+            std::ofstream fixture("Data/weight_MS.json");
+            fixture << entries;
+        }
+        {
+            std::ofstream overflow("Data/weight-overflow_MS.json");
+            overflow << R"([{"OriginalModel":"loader-weight-overflow.nif","Variants":[{"Model":"loader-weight-overflow-target.nif","Weight":1e999}]}])";
+        }
+        Persistence::Install();
+        const auto selected = [](const std::string& original, std::uint32_t ref = 1, std::uint32_t baseID = 0xF622) {
+            RE::TESBoundObject base;
+            base.formID = baseID;
+            base.SetModel(original.c_str());
+            auto swap = Manager::GetSingleton()->Swap(&base, ref);
+            return std::string(base.GetModel());
+        };
+        std::size_t firstCount = 0;
+        for (std::uint32_t ref = 1; ref <= 4096; ++ref) {
+            const auto result = selected("loader-weight-ratio.nif", ref);
+            Require(result == "loader-weight-first.nif" || result == "loader-weight-second.nif",
+                "loader accepts fractional object weights and never selects zero weights");
+            firstCount += result == "loader-weight-first.nif";
+        }
+        Require(firstCount > 850 && firstCount < 1200, "loader preserves fractional weights without integer truncation");
+        const std::array<const char*, 2> equal{"loader-weight-equal-first.nif", "loader-weight-equal-second.nif"};
+        for (std::uint32_t ref = 1; ref <= 128; ++ref) {
+            std::mt19937 engine(ref);
+            std::uniform_int_distribution<std::uint32_t> distribution(0, 1);
+            Require(selected("loader-weight-equal.nif", ref) == equal[distribution(engine)],
+                "loaded equal weights retain exact legacy seeded choices");
+            Require(selected("loader-weight-first.nif", ref) == selected("loader-weight-ratio.nif", ref),
+                "weighted aliases preserve candidate weights and seeded choices");
+        }
+        for (const auto original : {"loader-weight-zero.nif", "loader-weight-mixed.nif", "loader-weight-mixed-reverse.nif",
+                 "loader-weight-invalid-member.nif", "loader-weight-overflow.nif"}) {
+            Require(selected(original) == original, "invalid weighted arrays are rejected without partial registration");
+        }
+        for (std::size_t i = 0; i < invalidVariants.size(); ++i) {
+            const auto original = "loader-weight-invalid-" + std::to_string(i) + ".nif";
+            Require(selected(original) == original, "malformed weighted objects reject the whole rule");
+        }
+        Require(selected("loader-weight-after-invalid.nif") == "loader-weight-after-invalid-target.nif",
+            "invalid weighted rules do not interrupt later valid configuration entries");
+        Require(selected("loader-weight-unlisted.nif", 0xF621, 0xF620) == "loader-weight-id-only-target.nif",
+            "weighted ID-only rules retain base and reference filters");
+        Require(selected("loader-weight-unlisted.nif", 0xF621, 0xF622) == "loader-weight-unlisted.nif",
+            "weighted ID-only rules do not bypass base filters");
+        std::filesystem::remove("Data/weight_MS.json");
+        std::filesystem::remove("Data/weight-overflow_MS.json");
+        std::filesystem::current_path(previousDirectory);
+    }
+
     void TestConfigLoading() {
         const auto fixtureRoot = std::filesystem::path(__FILE__).parent_path().parent_path() / "build/tests/loader-fixture";
         std::filesystem::create_directories(fixtureRoot / "Data/SKSE/Plugins");
@@ -1350,6 +1496,7 @@ int main() {
     TestContextFilters();
     TestContextCapture();
     TestSelection();
+    TestWeightedSelection();
     TestIDOnlySelection();
     TestPrioritySelection();
     TestPriorityRegistration();
@@ -1363,6 +1510,7 @@ int main() {
     TestArmorRestoration();
     TestConfigLoading();
     TestPriorityLoading();
+    TestWeightedLoading();
     TestMultipleOriginalRegistration();
     TestIDOnlyRestoration();
     TestOriginalModelLoading();

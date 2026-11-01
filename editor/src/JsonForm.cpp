@@ -24,7 +24,7 @@
 #include <vector>
 
 namespace {
-enum class Hint { Generic, Text, Model, ID, Time, Priority };
+enum class Hint { Generic, Text, Model, Variants, Variant, ID, Time, Priority };
 
 const QStringList knownFields = {
     "Title", "Priority", "OriginalModel", "Variants", "BaseFormID", "ReferenceID",
@@ -37,7 +37,8 @@ const QStringList knownFields = {
 Hint hintFor(const QString& key) {
     if (key == "Title") return Hint::Text;
     if (key == "Priority") return Hint::Priority;
-    if (key == "OriginalModel" || key == "Variants") return Hint::Model;
+    if (key == "Variants") return Hint::Variants;
+    if (key == "OriginalModel") return Hint::Model;
     if (key.endsWith("FormID") || (knownFields.contains(key) && key.endsWith("ID"))) return Hint::ID;
     if (key == "ActiveTimeSpan") return Hint::Time;
     return Hint::Generic;
@@ -103,6 +104,13 @@ bool parseNumber(const QString& text, QJsonValue& result) {
     result = document.array().first();
     return true;
 }
+
+QString displayValue(const QJsonValue& value) {
+    if (value.isUndefined()) return {};
+    if (value.isString()) return value.toString();
+    const auto serialized = QJsonDocument(QJsonArray{value}).toJson(QJsonDocument::Compact);
+    return QString::fromUtf8(serialized.mid(1, serialized.size() - 2));
+}
 }
 
 // Recursive controls retain JSON representations while editing or repairing
@@ -120,6 +128,14 @@ public:
     }
 
     QJsonValue value() const {
+        if (hint_ == Hint::Variant && initial_.isObject()) {
+            auto object = initial_.toObject();
+            if (modelEdited_ || object.value("Model").isString()) object.insert("Model", text_->text());
+            QJsonValue weight;
+            if ((weightEdited_ || object.value("Weight").isDouble()) && parseNumber(weight_->text(), weight))
+                object.insert("Weight", weight);
+            return object;
+        }
         if (initial_.isObject()) {
             // Unrecognized entry properties stay in the document without
             // exposing controls for settings the plugin does not support.
@@ -155,7 +171,12 @@ public:
 
     QStringList errors(const QString& path) const {
         QStringList result;
-        if (plugin_ && isLegacyID()) {
+        if (hint_ == Hint::Variant && weight_) {
+            QJsonValue number;
+            if ((!weightEdited_ && !initial_.toObject().value("Weight").isDouble()) ||
+                !parseNumber(weight_->text(), number) || number.toDouble() < 0.0)
+                result << path + ".Weight: enter a finite floating-point number of 0 or greater.";
+        } else if (plugin_ && isLegacyID()) {
             const auto plugin = plugin_->currentText();
             const auto localID = text_->text();
             if (!(plugin.isEmpty() && localID.isEmpty()) &&
@@ -207,11 +228,19 @@ private:
         initial_ = std::move(initial);
         children_.clear();
         text_ = nullptr;
+        weight_ = nullptr;
+        modelEdited_ = false;
+        weightEdited_ = false;
         multiline_ = nullptr;
         check_ = nullptr;
         plugin_ = nullptr;
         tabs_ = nullptr;
-        if (initial_.isObject()) buildObject();
+        if (hint_ == Hint::Variants && initial_.isArray() && !initial_.toArray().isEmpty()) {
+            weighted_ = false;
+            for (const auto& item : initial_.toArray()) weighted_ = weighted_ || item.isObject();
+        }
+        if (hint_ == Hint::Variant && initial_.isObject()) buildVariant();
+        else if (initial_.isObject()) buildObject();
         else if (initial_.isArray()) buildArray();
         else if (hint_ == Hint::ID && (initial_.isString() || initial_.isDouble())) buildID();
         else if (initial_.isBool()) {
@@ -239,7 +268,7 @@ private:
                 text_->setPlaceholderText("0");
                 text_->setToolTip("A floating-point number, for example 1.5. Only matching swaps tied for the highest priority join the pool. Disabled priority defaults to 0.");
             }
-            if (hint_ == Hint::Model) text_->setPlaceholderText("Folder\\Model.nif");
+            if (hint_ == Hint::Model || hint_ == Hint::Variants) text_->setPlaceholderText("Folder\\Model.nif");
             if (hint_ == Hint::Time) {
                 text_->setPlaceholderText("dd-MM~dd-MM");
                 text_->setToolTip("First day-month ~ last day-month, for example 01-06~31-08");
@@ -348,6 +377,21 @@ private:
                 form->setVisible(checked);
                 notify();
             });
+            if (known && key == "Variants") {
+                auto* weights = new QPushButton(group);
+                weights->setObjectName("variantWeightMode");
+                weights->setVisible(present);
+                weights->setToolTip("Use relative floating-point weights, or give every model an equal chance.");
+                const auto update = [form, weights] {
+                    weights->setText(form->weighted_ ? "Uniform" : "Use weight");
+                    weights->setEnabled(form->value().isArray());
+                };
+                update();
+                title->addWidget(weights);
+                connect(enabled, &QCheckBox::toggled, weights, &QPushButton::setVisible);
+                form->changed_ = [this, update] { update(); notify(); };
+                connect(weights, &QPushButton::clicked, form, [form] { form->toggleWeights(); });
+            }
             if (known && (key == "OriginalModel" || hintFor(key) == Hint::ID ||
                           (key == "Variants" && !form->value().isArray()))) {
                 auto* list = new QPushButton(present && object.value(key).isArray() ? "Use single value" : "Use list", group);
@@ -399,16 +443,19 @@ private:
 
     void buildArray() {
         const auto array = initial_.toArray();
-        auto* add = new QPushButton(hint_ == Hint::ID ? "Add Form ID" : hint_ == Hint::Model ? "Add model" : "Add value", this);
+        const bool modelList = hint_ == Hint::Model || hint_ == Hint::Variants;
+        auto* add = new QPushButton(hint_ == Hint::ID ? "Add Form ID" : modelList ? "Add model" : "Add value", this);
         add->setObjectName("addListItem");
         add->setAccessibleName(add->text());
-        add->setToolTip(hint_ == Hint::ID ? "Append a Form ID to this list" : hint_ == Hint::Model ? "Append a model path to this list" : "Append a value to this list");
+        add->setToolTip(hint_ == Hint::ID ? "Append a Form ID to this list" : modelList ? "Append a model path to this list" : "Append a value to this list");
         layout_->addWidget(add, 0, Qt::AlignLeft);
         connect(add, &QPushButton::clicked, this, [this] {
             if (!canRestructure()) return;
             auto array = value().toArray();
-            array.append(hint_ == Hint::ID ? QJsonValue((plugins_.isEmpty() ? QString("Skyrim.esm") : plugins_.first()) + "|")
-                                         : QJsonValue(QString{}));
+            if (hint_ == Hint::Variants && weighted_)
+                array.append(QJsonObject{{"Model", QString{}}, {"Weight", 1.0}});
+            else array.append(hint_ == Hint::ID ? QJsonValue((plugins_.isEmpty() ? QString("Skyrim.esm") : plugins_.first()) + "|")
+                                              : QJsonValue(QString{}));
             replace(array);
         });
         for (qsizetype index = 0; index < array.size(); ++index) {
@@ -422,10 +469,11 @@ private:
             number->setObjectName("listItemNumber");
             number->setMinimumWidth(20);
             row->addWidget(number);
-            auto* form = new ValueForm(array.at(index), plugins_, hint_, false, [this] { notify(); }, item);
+            const auto childHint = hint_ == Hint::Variants ? (array.at(index).isObject() ? Hint::Variant : Hint::Model) : hint_;
+            auto* form = new ValueForm(array.at(index), plugins_, childHint, false, [this] { notify(); }, item);
             children_.push_back({{}, form});
             if (hint_ == Hint::Generic) addTypeSelector(form, row);
-            const bool compact = !array.at(index).isArray() && !array.at(index).isObject();
+            const bool compact = childHint == Hint::Variant || (!array.at(index).isArray() && !array.at(index).isObject());
             if (compact) row->addWidget(form, 1);
             else row->addStretch();
             auto* remove = removeButton(item);
@@ -442,6 +490,46 @@ private:
             if (!compact) itemLayout->addWidget(form);
             layout_->addWidget(item);
         }
+    }
+
+    void toggleWeights() {
+        if (!initial_.isArray() || !canRestructure()) return;
+        QJsonArray converted;
+        for (const auto& item : value().toArray()) {
+            if (weighted_ && item.isObject() && item.toObject().value("Model").isString())
+                converted.append(item.toObject().value("Model"));
+            else if (!weighted_ && item.isString())
+                converted.append(QJsonObject{{"Model", item}, {"Weight", 1.0}});
+            else {
+                QMessageBox::warning(this, "Correct these values", "Variants must contain only model paths or only objects with Model and Weight before switching modes.");
+                return;
+            }
+        }
+        weighted_ = !weighted_;
+        replace(converted);
+    }
+
+    void buildVariant() {
+        const auto object = initial_.toObject();
+        auto* row = new QHBoxLayout;
+        text_ = new QLineEdit(displayValue(object.value("Model")), this);
+        text_->setObjectName("variantModel");
+        text_->setAccessibleName("Model path");
+        text_->setPlaceholderText("Folder\\Model.nif");
+        weight_ = new QLineEdit(displayValue(object.value("Weight")), this);
+        weight_->setObjectName("variantWeight");
+        weight_->setAccessibleName("Weight");
+        weight_->setPlaceholderText("1.0");
+        weight_->setMinimumWidth(65);
+        weight_->setToolTip("Relative floating-point weight, for example 0.5 or 1.5. Zero is never picked. At least one model must have a positive weight.");
+        auto* label = new QLabel("Weight", this);
+        label->setBuddy(weight_);
+        row->addWidget(text_, 3);
+        row->addWidget(label);
+        row->addWidget(weight_, 1);
+        layout_->addLayout(row);
+        connect(text_, &QLineEdit::textChanged, this, [this] { modelEdited_ = true; notify(); });
+        connect(weight_, &QLineEdit::textChanged, this, [this] { weightEdited_ = true; notify(); });
     }
 
     void buildID() {
@@ -492,6 +580,10 @@ private:
     QVBoxLayout* layout_;
     std::vector<Child> children_;
     QLineEdit* text_ = nullptr;
+    QLineEdit* weight_ = nullptr;
+    bool weighted_ = false;
+    bool modelEdited_ = false;
+    bool weightEdited_ = false;
     QPlainTextEdit* multiline_ = nullptr;
     QCheckBox* check_ = nullptr;
     QComboBox* plugin_ = nullptr;

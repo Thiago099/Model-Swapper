@@ -3,7 +3,10 @@
 #include "TimeClass.h"
 #include "Config.h"
 #include "FormFilter.h"
+#include <algorithm>
+#include <cmath>
 #include <memory>
+#include <random>
 struct variant {
     const char* model;
     const char* key;
@@ -11,6 +14,7 @@ struct variant {
     Time endDate;
     FormFilter filter;
     double priority = 0.0;
+    double weight = 1.0;
 };
 
 using variants = std::vector<variant*>;
@@ -53,10 +57,34 @@ inline variant* find(const models& models, const char* str, uint32_t seed, RE::F
         }
     }
     appendEligible("");
+    std::erase_if(eligible, [](const variant* item) {
+        return !std::isfinite(item->weight) || item->weight <= 0.0;
+    });
     if (!eligible.empty()) {
         std::mt19937 engine(seed);
-        std::uniform_int_distribution<uint32_t> dist(0, static_cast<uint32_t>(eligible.size() - 1));
-        uint32_t random_number = dist(engine);
+        std::size_t random_number;
+        const double firstWeight = eligible.front()->weight;
+        const bool uniform = std::all_of(eligible.begin(), eligible.end(), [firstWeight](const variant* item) {
+            return item->weight == firstWeight;
+        });
+        if (uniform) {
+            // Preserve the existing reference-seeded choices for uniform pools.
+            std::uniform_int_distribution<uint32_t> dist(0, static_cast<uint32_t>(eligible.size() - 1));
+            random_number = dist(engine);
+        } else {
+            double maximumWeight = firstWeight;
+            for (const auto item : eligible) {
+                maximumWeight = std::max(maximumWeight, item->weight);
+            }
+            std::vector<double> weights;
+            weights.reserve(eligible.size());
+            for (const auto item : eligible) {
+                // Scaling prevents overflow when several finite weights are large.
+                weights.push_back(item->weight / maximumWeight);
+            }
+            std::discrete_distribution<std::size_t> dist(weights.begin(), weights.end());
+            random_number = dist(engine);
+        }
         if (random_number < eligible.size()) {
 
             auto result = eligible.at(random_number);

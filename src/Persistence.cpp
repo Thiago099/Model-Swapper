@@ -168,19 +168,56 @@ void Persistence::Install() {
                     endDate = pair.second;
                 }
 
+                const bool hasStrings = std::any_of(variants.begin(), variants.end(), [](const json& value) {
+                    return value.is_string();
+                });
+                const bool hasObjects = std::any_of(variants.begin(), variants.end(), [](const json& value) {
+                    return value.is_object();
+                });
+                if (hasStrings && hasObjects) {
+                    logger::error("error processing item {} on file {} Variants cannot mix strings and objects", i, filename);
+                    continue;
+                }
+                std::vector<std::pair<std::string, double>> parsedVariants;
+                bool validVariants = true;
+                bool hasPositiveWeight = false;
                 for (std::size_t j = 0; j < variants.size(); ++j) {
                     const auto& v = variants[j];
-                    if (!v.is_string()) {
+                    double weight = 1.0;
+                    std::string path;
+                    if (hasObjects) {
+                        if (!v.is_object() || !v.contains("Model") || !v["Model"].is_string() ||
+                            v["Model"].get_ref<const std::string&>().find_first_not_of(" \t\r\n\f\v") == std::string::npos ||
+                            Str::processString(v["Model"].get<std::string>()).empty() ||
+                            !v.contains("Weight") || !v["Weight"].is_number() ||
+                            !std::isfinite(weight = v["Weight"].get<double>()) || weight < 0.0) {
+                            logger::error("error processing item {} on file {} variant {} requires a nonempty Model and finite nonnegative Weight", i, filename, j);
+                            validVariants = false;
+                            break;
+                        }
+                        path = v["Model"].get<std::string>();
+                    } else if (v.is_string()) {
+                        path = v.get<std::string>();
+                    } else {
                         logger::error("error processing item {} on file {} variant {} must be string", i, filename, j);
                         continue;
                     }
-                    auto modelPath = strdup(v.get<std::string>().c_str());
-                    auto key = strdup(Str::processString(v.get<std::string>()).c_str());
+                    hasPositiveWeight = hasPositiveWeight || weight > 0.0;
+                    parsedVariants.emplace_back(std::move(path), weight);
+                }
+                if (!validVariants || (hasObjects && !hasPositiveWeight)) {
+                    logger::error("error processing item {} on file {} weighted Variants require valid entries and at least one positive Weight", i, filename);
+                    continue;
+                }
+                for (const auto& [path, weight] : parsedVariants) {
+                    auto modelPath = strdup(path.c_str());
+                    auto key = strdup(Str::processString(path).c_str());
                     auto current = new variant();
                     current->startDate = startDate;
                     current->endDate = endDate;
                     current->filter = filter;
                     current->priority = priority;
+                    current->weight = weight;
                     current->model = modelPath;
                     current->key = key;
                     models.push_back(current);

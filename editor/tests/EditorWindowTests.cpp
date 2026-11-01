@@ -952,9 +952,10 @@ namespace {
             {QStringLiteral("Priority"), 1.5},
             {QStringLiteral("OriginalModel"), QJsonArray{QStringLiteral("Architecture\\Farmhouse.nif"),
                                                        QStringLiteral("Architecture\\FarmhouseSnow.nif")}},
-            {QStringLiteral("Variants"), QJsonArray{QStringLiteral("ModelSwapper\\FarmhouseSummer.nif"),
-                                                  QStringLiteral("ModelSwapper\\FarmhouseAutumn.nif"),
-                                                  QStringLiteral("ModelSwapper\\FarmhouseWinter.nif")}},
+            {QStringLiteral("Variants"), QJsonArray{
+                QJsonObject{{"Model", "ModelSwapper\\FarmhouseSummer.nif"}, {"Weight", 0.5}},
+                QJsonObject{{"Model", "ModelSwapper\\FarmhouseAutumn.nif"}, {"Weight", 1.5}},
+                QJsonObject{{"Model", "ModelSwapper\\FarmhouseWinter.nif"}, {"Weight", 0.0}}}},
             {QStringLiteral("BaseFormID"), QJsonArray{QStringLiteral("Example.esp|001234"), QStringLiteral("Skyrim.esm|001235")}},
             {QStringLiteral("ReferenceID"), QStringLiteral("Example.esp|005678")},
             {QStringLiteral("ExcludeBaseFormID"), QStringLiteral("Example.esp|001235")},
