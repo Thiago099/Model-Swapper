@@ -949,6 +949,7 @@ namespace {
         }
         const QJsonObject previewEntry{
             {QStringLiteral("Title"), QStringLiteral("Seasonal farmhouse")},
+            {QStringLiteral("Priority"), 1.5},
             {QStringLiteral("OriginalModel"), QJsonArray{QStringLiteral("Architecture\\Farmhouse.nif"),
                                                        QStringLiteral("Architecture\\FarmhouseSnow.nif")}},
             {QStringLiteral("Variants"), QJsonArray{QStringLiteral("ModelSwapper\\FarmhouseSummer.nif"),

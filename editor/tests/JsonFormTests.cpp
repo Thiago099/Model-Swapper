@@ -185,6 +185,55 @@ void testTitleEditing() {
     require(form.value() == legacy, "A previous entry's title must not leak into a legacy entry");
 }
 
+void testPriorityEditing() {
+    JsonForm form({"Skyrim.esm"});
+    const QJsonObject legacy{{"OriginalModel", "Original.nif"}, {"Variants", QJsonArray{"Variant.nif"}}};
+    form.setValue(legacy);
+    int changes = 0;
+    QObject::connect(&form, &JsonForm::changed, [&changes] { ++changes; });
+    auto* priority = field(form, "Priority");
+    auto* included = priority->findChild<QCheckBox*>();
+    auto* input = priority->findChild<QLineEdit*>();
+    require(included && !included->isChecked() && input && input->accessibleName() == "Priority" &&
+                settingsTabs(form)->widget(0)->isAncestorOf(priority) && form.value() == legacy,
+            "Priority must be an optional numeric Basics control that keeps legacy entries unchanged");
+    require(priority->findChildren<QComboBox*>().isEmpty() && priority->findChildren<QPushButton*>().isEmpty() &&
+                included->toolTip().contains("0") && input->toolTip().contains("highest priority"),
+            "Valid priorities must explain their default and selection behavior without type or list controls");
+    included->setChecked(true);
+    require(form.value().value("Priority").isDouble() && form.value().value("Priority").toDouble() == 0.0,
+            "Enabling Priority must start with numeric zero");
+    for (const auto& text : {QString("1.75"), QString("-2.25"), QString("0"), QString("1.25e-3")}) {
+        input->setText(text);
+        require(form.errors().isEmpty() && form.value().value("Priority").isDouble() &&
+                    form.value().value("Priority").toDouble() == text.toDouble(),
+                "Priority must accept and save positive, negative, zero and exponent floating-point numbers");
+    }
+    auto fallback = legacy;
+    fallback.insert("Priority", 0.0);
+    for (const auto& text : {QString{}, QString("one"), QString("NaN"), QString("Infinity"),
+                             QString("1e999"), QString("\"1.5\""), QString("[1.5]"), QString("true")}) {
+        input->setText(text);
+        require(form.errors().join('\n').contains("Priority") && form.value() == fallback,
+                "Invalid priority input must report the field and never turn the saved value into text or a nonfinite number");
+    }
+    included->setChecked(false);
+    require(form.errors().isEmpty() && form.value() == legacy,
+            "Disabling Priority must omit it and ignore any invalid hidden input");
+    included->setChecked(true);
+    input->setText("-0.75");
+    const auto edited = form.value();
+    require(changes >= 8 && form.errors().isEmpty(), "Priority edits and toggles must notify the document");
+    form.setValue(edited);
+    processDeletes();
+    require(form.value() == edited && field(form, "Priority")->findChild<QLineEdit*>()->text() == "-0.75",
+            "A fractional priority must round trip as an editable JSON number");
+    form.setValue(legacy);
+    processDeletes();
+    require(form.value() == legacy && !field(form, "Priority")->findChild<QCheckBox*>()->isChecked(),
+            "A previous entry's priority must not leak into a legacy entry");
+}
+
 void testInvalidValuesCanBeRepaired() {
     JsonForm form({"Skyrim.esm"});
     form.setValue({{"OriginalModel", true}, {"Variants", "Replacement.nif"}, {"BaseFormID", false}, {"ActiveTimeSpan", 5}});
@@ -207,6 +256,17 @@ void testInvalidValuesCanBeRepaired() {
         require(form.value().value("Title").isString() && form.value().value("Title").toString().isEmpty() &&
                     field(form, "Title")->findChild<QLineEdit*>()->accessibleName() == "Title",
                 "Malformed titles must reset explicitly to an editable empty string");
+    }
+    for (const auto& malformed : QJsonArray{"1.5", true, QJsonValue::Null, QJsonArray{1.5}, QJsonObject{{"unexpected", true}}}) {
+        const QJsonObject entry{{"Priority", malformed}, {"OriginalModel", "Original.nif"}, {"Variants", QJsonArray{"Variant.nif"}}};
+        form.setValue(entry);
+        processDeletes();
+        require(form.value() == entry, "Malformed priorities must preserve their original JSON type until explicitly repaired");
+        button(field(form, "Priority"), "Reset field")->click();
+        processDeletes();
+        require(form.value().value("Priority").isDouble() && form.value().value("Priority").toDouble() == 0.0 &&
+                    field(form, "Priority")->findChild<QLineEdit*>()->accessibleName() == "Priority",
+                "Malformed priorities must reset to an editable numeric zero");
     }
 }
 
@@ -370,7 +430,7 @@ void testUnknownPropertiesPreservedWithoutControls() {
 
 void testTabPartitionAndNavigation() {
     JsonForm form({"Skyrim.esm", "Installed.esp"});
-    QJsonObject entry{{"Title", "Named swap"}, {"OriginalModel", QJsonArray{"One.nif", "Two.nif"}},
+    QJsonObject entry{{"Title", "Named swap"}, {"Priority", 2.5}, {"OriginalModel", QJsonArray{"One.nif", "Two.nif"}},
                       {"Variants", QJsonArray{"Variant.nif"}},
                       {"BaseFormID", "Installed.esp|001234"}, {"ReferenceID", 4660},
                       {"ExcludeBaseFormID", QJsonArray{}}, {"ExcludeReferenceID", "FF001234"},
@@ -382,7 +442,7 @@ void testTabPartitionAndNavigation() {
     QObject::connect(&form, &JsonForm::changed, [&changes] { ++changes; });
     auto* tabs = settingsTabs(form);
     const std::array<std::pair<QString, QStringList>, 4> sections{{
-        {"Basics", {"Title", "Variants"}},
+        {"Basics", {"Title", "Priority", "Variants"}},
         {"Targets", {"OriginalModel", "BaseFormID", "ReferenceID"}},
         {"Inclusions", {"ActiveTimeSpan", "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID"}},
         {"Exclusions", {"ExcludeBaseFormID", "ExcludeReferenceID", "ExcludeLocationID", "ExcludeRegionID",
@@ -485,6 +545,7 @@ int main(int argc, char** argv) {
         testRoundTrip();
         testEdits();
         testTitleEditing();
+        testPriorityEditing();
         testLegacyIDReplacement();
         testInvalidValuesCanBeRepaired();
         testConditionFields();

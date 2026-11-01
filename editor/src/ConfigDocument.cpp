@@ -445,6 +445,12 @@ namespace ConfigFiles {
                 continue;
             }
             const auto entry = entries.at(index).toObject();
+            if (entry.contains(QStringLiteral("Priority"))) {
+                const auto priority = entry.value(QStringLiteral("Priority"));
+                if (!priority.isDouble() || !std::isfinite(priority.toDouble())) {
+                    errors.append(prefix + QStringLiteral(".Priority: use a finite floating-point number, for example 1.5."));
+                }
+            }
             validateModels(entry.value(QStringLiteral("Variants")), prefix + QStringLiteral(".Variants"), false, errors);
             if (entry.contains(QStringLiteral("OriginalModel"))) {
                 validateModels(entry.value(QStringLiteral("OriginalModel")), prefix + QStringLiteral(".OriginalModel"), true, errors);

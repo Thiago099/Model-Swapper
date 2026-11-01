@@ -18,15 +18,16 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <cmath>
 #include <functional>
 #include <utility>
 #include <vector>
 
 namespace {
-enum class Hint { Generic, Text, Model, ID, Time };
+enum class Hint { Generic, Text, Model, ID, Time, Priority };
 
 const QStringList knownFields = {
-    "Title", "OriginalModel", "Variants", "BaseFormID", "ReferenceID",
+    "Title", "Priority", "OriginalModel", "Variants", "BaseFormID", "ReferenceID",
     "ExcludeBaseFormID", "ExcludeReferenceID",
     "ActiveTimeSpan",
     "LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID",
@@ -35,6 +36,7 @@ const QStringList knownFields = {
 
 Hint hintFor(const QString& key) {
     if (key == "Title") return Hint::Text;
+    if (key == "Priority") return Hint::Priority;
     if (key == "OriginalModel" || key == "Variants") return Hint::Model;
     if (key.endsWith("FormID") || (knownFields.contains(key) && key.endsWith("ID"))) return Hint::ID;
     if (key == "ActiveTimeSpan") return Hint::Time;
@@ -42,7 +44,7 @@ Hint hintFor(const QString& key) {
 }
 
 int tabFor(const QString& key) {
-    if (key == "Title" || key == "Variants") return 0;
+    if (key == "Title" || key == "Priority" || key == "Variants") return 0;
     if (key == "OriginalModel" || key == "BaseFormID" || key == "ReferenceID") return 1;
     if (key.startsWith("Exclude")) return 3;
     return 2;
@@ -50,6 +52,7 @@ int tabFor(const QString& key) {
 
 QJsonValue defaultFor(const QString& key) {
     if (key == "Variants") return QJsonArray{QString{}};
+    if (key == "Priority") return 0.0;
     if (hintFor(key) == Hint::ID) return QString("Skyrim.esm|");
     if (hintFor(key) == Hint::Time) return QString("01-01~31-12");
     return QString{};
@@ -95,7 +98,8 @@ void clearLayout(QLayout* layout) {
 
 bool parseNumber(const QString& text, QJsonValue& result) {
     const auto document = QJsonDocument::fromJson(("[" + text.trimmed() + "]").toUtf8());
-    if (!document.isArray() || document.array().size() != 1 || !document.array().first().isDouble()) return false;
+    if (!document.isArray() || document.array().size() != 1 || !document.array().first().isDouble() ||
+        !std::isfinite(document.array().first().toDouble())) return false;
     result = document.array().first();
     return true;
 }
@@ -160,7 +164,7 @@ public:
             }
         } else if (text_ && initial_.isDouble() && !plugin_) {
             QJsonValue number;
-            if (!parseNumber(text_->text(), number)) result << path + ": enter a valid JSON number.";
+            if (!parseNumber(text_->text(), number)) result << path + ": enter a valid finite JSON number.";
         }
         int index = 0;
         for (const auto& child : children_) {
@@ -229,6 +233,11 @@ private:
             if (hint_ == Hint::Text) {
                 text_->setAccessibleName("Title");
                 text_->setPlaceholderText("Name this swap");
+            }
+            if (hint_ == Hint::Priority) {
+                text_->setAccessibleName("Priority");
+                text_->setPlaceholderText("0");
+                text_->setToolTip("A floating-point number, for example 1.5. Only matching swaps tied for the highest priority join the pool. Disabled priority defaults to 0.");
             }
             if (hint_ == Hint::Model) text_->setPlaceholderText("Folder\\Model.nif");
             if (hint_ == Hint::Time) {
@@ -316,6 +325,9 @@ private:
             auto* enabled = new QCheckBox(key, group);
             enabled->setChecked(present);
             enabled->setToolTip("Include this property in the saved JSON");
+            if (key == "Priority") {
+                enabled->setToolTip("Disabled priority defaults to 0. Only matching swaps tied for the highest priority join the pool.");
+            }
             const auto contextKey = key.startsWith("Exclude") ? key.mid(7) : key;
             if (QStringList{"LocationID", "RegionID", "KeywordID", "CellID", "WorldspaceID"}.contains(contextKey)) {
                 enabled->setToolTip(key.startsWith("Exclude")
@@ -362,7 +374,8 @@ private:
                            !form->value().isDouble() && !form->value().isArray()) ||
                           ((key == "OriginalModel" || key == "Variants") &&
                            !form->value().isString() && !form->value().isArray()) ||
-                          ((key == "Title" || key == "ActiveTimeSpan") && !form->value().isString()))) {
+                          ((key == "Title" || key == "ActiveTimeSpan") && !form->value().isString()) ||
+                          (key == "Priority" && !form->value().isDouble()))) {
                 auto* reset = new QPushButton("Reset field", group);
                 reset->setVisible(present);
                 title->addWidget(reset);

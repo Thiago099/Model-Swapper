@@ -38,17 +38,18 @@ void Manager::Register(std::vector<std::string> keys, variants value) {
 
     std::set<std::string> aliases;
     for (auto item : value) {
-        if (item->key[0] == '\0' || !aliases.insert(item->key).second) {
+        if (item->key[0] == '\0' || originalKeys.contains(item->key) || !aliases.insert(item->key).second) {
             continue;
         }
         auto& aliasVariants = sources[item->key];
         if (scoped) {
-            if (!originalKeys.contains(item->key)) {
-                aliasVariants.insert(aliasVariants.end(), value.begin(), value.end());
-            }
+            aliasVariants.insert(aliasVariants.end(), value.begin(), value.end());
         } else {
-            // Keep legacy alias replacement without discarding scoped rules.
-            std::erase_if(aliasVariants, [](variant* existing) { return !existing->filter.IsScoped(); });
+            // Keep legacy alias replacement without discarding scoped or
+            // higher-priority rules registered at the same model path.
+            std::erase_if(aliasVariants, [priority = item->priority](variant* existing) {
+                return !existing->filter.IsScoped() && existing->priority <= priority;
+            });
             aliasVariants.insert(aliasVariants.end(), value.begin(), value.end());
         }
     }

@@ -10,6 +10,7 @@ struct variant {
     Time startDate;
     Time endDate;
     FormFilter filter;
+    double priority = 0.0;
 };
 
 using variants = std::vector<variant*>;
@@ -28,12 +29,19 @@ public:
 inline variant* find(const models& models, const char* str, uint32_t seed, RE::FormID baseFormID = 0,
                      const FormFilterContext* context = nullptr) {
     variants eligible;
+    double highestPriority = 0.0;
     const auto appendEligible = [&](const std::string& key) {
         auto it = models.find(key);
         if (it != models.end()) {
             for (auto item : it->second) {
                 if (item->filter.Matches(baseFormID, seed, context)) {
-                    eligible.push_back(item);
+                    if (eligible.empty() || item->priority > highestPriority) {
+                        eligible.clear();
+                        highestPriority = item->priority;
+                    }
+                    if (item->priority == highestPriority) {
+                        eligible.push_back(item);
+                    }
                 }
             }
         }

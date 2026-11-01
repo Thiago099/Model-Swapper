@@ -1,5 +1,6 @@
 #include "Persistence.h"
 #include "FilterContext.h"
+#include <cmath>
 
 const std::string pattern = "_MS.json";
 const std::string directory = "Data/";
@@ -27,6 +28,8 @@ void EachConfigFile(std::function<void(std::string, json)> callback) {
 
                 } catch (const json::parse_error& e) {
                     logger::error("error parsing file {}: {}", filename, e.what());
+                } catch (const json::out_of_range& e) {
+                    logger::error("error parsing numeric value in file {}: {}", filename, e.what());
                 }
             }
         }
@@ -61,6 +64,14 @@ void Persistence::Install() {
                 if (!variants.is_array()) {
                     logger::error("error processing item {} on file {} Variants must be variants", i, filename);
                     continue;
+                }
+
+                double priority = 0.0;
+                if (auto value = item.find("Priority"); value != item.end()) {
+                    if (!value->is_number() || !std::isfinite(priority = value->get<double>())) {
+                        logger::error("error processing item {} on file {} Priority must be a finite number", i, filename);
+                        continue;
+                    }
                 }
 
                 FormFilter filter;
@@ -169,6 +180,7 @@ void Persistence::Install() {
                     current->startDate = startDate;
                     current->endDate = endDate;
                     current->filter = filter;
+                    current->priority = priority;
                     current->model = modelPath;
                     current->key = key;
                     models.push_back(current);

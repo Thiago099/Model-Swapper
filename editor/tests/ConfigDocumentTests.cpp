@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 namespace {
@@ -210,9 +211,30 @@ namespace {
                 "Validation must identify the entry and offending field");
     }
 
+    void testPriorityValidation() {
+        auto entry = validEntry();
+        require(accepts(entry), "Omitted priority must remain valid with runtime default zero");
+        for (const double priority : {0.0, 1.0, 1.25, -2.5, 1e-12,
+                                      std::numeric_limits<double>::max(), std::numeric_limits<double>::lowest()}) {
+            entry.insert(QStringLiteral("Priority"), priority);
+            require(accepts(entry), "Priority must accept finite signed floating-point numbers");
+        }
+        const QJsonArray invalidPriorities{QStringLiteral("1.5"), QStringLiteral(""), true, QJsonValue::Null,
+                                          QJsonArray{1.5}, QJsonObject{},
+                                          QJsonValue(std::numeric_limits<double>::infinity()),
+                                          QJsonValue(std::numeric_limits<double>::quiet_NaN())};
+        for (const auto& priority : invalidPriorities) {
+            entry.insert(QStringLiteral("Priority"), priority);
+            const auto errors = ConfigFiles::validate(QJsonArray{entry});
+            require(errors.size() == 1 && errors.first().contains(QStringLiteral("Entry [0].Priority")),
+                    "Invalid priorities must fail with a field-specific error");
+        }
+    }
+
     void testLoadingAndSaving(const QString& root) {
         const auto path = root + QStringLiteral("/Editing_MS.json");
         auto entry = validEntry();
+        entry.insert(QStringLiteral("Priority"), -1.25);
         entry.insert(QStringLiteral("BaseFormID"), QJsonArray{4660, QStringLiteral("Unknown.esp|001234")});
         const QJsonArray conditionForms{QString("Unknown.esp|001234"), QString("0x01001234"), 4660,
                                        QJsonArray{}, QJsonArray{4660, "Light.esl|ABC", "0x01001234"}};
@@ -622,6 +644,7 @@ int main(int argc, char** argv) {
         testSourceDirectoryRescan(directory.path());
         testSourceDirectoryConflicts(directory.path());
         testValidation();
+        testPriorityValidation();
         testConditionValidation();
         testLoadingAndSaving(directory.path());
         testRepeatedSaveSnapshots(directory.path());

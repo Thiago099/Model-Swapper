@@ -819,6 +819,191 @@ namespace {
         config->NowOverride = {};
     }
 
+    void TestPrioritySelection() {
+        auto generic = MakeVariant("priority-generic.nif", "priority-generic.nif");
+        auto base = MakeVariant("priority-base.nif", "priority-base.nif", 0xF400);
+        base.priority = 1.0;
+        auto location = MakeVariant("priority-location.nif", "priority-location.nif", 0xF400);
+        location.priority = 1.5;
+        location.filter.locationID = std::vector<std::uint32_t>{0xF401};
+        auto nonmatching = MakeVariant("priority-nonmatching.nif", "priority-nonmatching.nif", 0xF402);
+        nonmatching.priority = 100.0;
+        models choices{{"priority-original.nif", {&generic, &nonmatching}}, {"", {&base, &location}}};
+        FormFilterContext riverwood, elsewhere;
+        riverwood.locations = {0xF401};
+        elsewhere.locations = {0xF403};
+        for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+            Require(find(choices, "priority-original.nif", ref, 0xF400, &riverwood) == &location,
+                "higher fractional context priority beats generic model and base-only entries");
+            Require(find(choices, "priority-original.nif", ref, 0xF400, &elsewhere) == &base,
+                "a higher nonmatching context or base rule cannot suppress a matching lower priority");
+            Require(find(choices, "priority-original.nif", ref, 0xF404, &riverwood) == &generic,
+                "priority never bypasses base filters");
+        }
+        generic.priority = 2.0;
+        Require(find(choices, "priority-original.nif", 1, 0xF400, &riverwood) == &generic,
+            "a higher generic priority can override a location-specific entry");
+
+        generic.priority = base.priority = 1.5;
+        const std::array<variant*, 3> tied{&generic, &base, &location};
+        for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+            std::mt19937 engine(ref);
+            std::uniform_int_distribution<std::uint32_t> distribution(0, 2);
+            Require(find(choices, "priority-original.nif", ref, 0xF400, &riverwood) == tied[distribution(engine)],
+                "highest priority ties preserve reference-seeded pooling across model/base/context rules");
+        }
+
+        generic.priority = -2.5;
+        base.priority = -1.25;
+        location.priority = -3.0;
+        Require(find(choices, "priority-original.nif", 1, 0xF400, &riverwood) == &base,
+            "all-negative priorities select the highest matching value");
+        generic.priority = 0.0;
+        Require(find(choices, "priority-original.nif", 1, 0xF400, &riverwood) == &generic,
+            "default zero priority outranks negative priorities");
+
+        location.priority = 1.5;
+        const auto dates = Time::fromDatePairString("01-01~31-01");
+        location.startDate = dates.first;
+        location.endDate = dates.second;
+        auto config = Config::GetSingleton();
+        config->NowOverride = Time::fromString("2026-10-06 12:00:00");
+        Require(!find(choices, "priority-original.nif", 1, 0xF400, &riverwood),
+            "an inactive selected highest-priority variant preserves no-swap temporal behavior without lower fallback");
+        config->BypassTemporalActivation = true;
+        Require(find(choices, "priority-original.nif", 1, 0xF400, &riverwood) == &location,
+            "temporal bypass retains priority selection");
+        config->BypassTemporalActivation = false;
+        config->NowOverride = {};
+    }
+
+    void TestPriorityRegistration() {
+        auto manager = Manager::GetSingleton();
+        const auto selected = [manager](const char* original, std::uint32_t ref = 1) {
+            RE::TESBoundObject base;
+            base.formID = 0xF420;
+            base.SetModel(original);
+            auto swap = manager->Swap(&base, ref);
+            return std::string(base.GetModel());
+        };
+
+        static auto high = MakeVariant("priority-self-high.nif", "priority-self-high.nif");
+        static auto self = MakeVariant("priority-self-original.nif", "priority-self-original.nif");
+        high.priority = 1.5;
+        manager->Register("priority-self-original.nif", {&high});
+        manager->Register("priority-self-original.nif", {&self});
+        Require(selected("priority-self-original.nif") == high.model,
+            "a later original-model variant cannot erase a higher-priority rule for the same original");
+
+        static auto highSelf = MakeVariant("priority-self-first-original.nif", "priority-self-first-original.nif");
+        static auto low = MakeVariant("priority-self-first-low.nif", "priority-self-first-low.nif");
+        highSelf.priority = 1.5;
+        manager->Register("priority-self-first-original.nif", {&highSelf});
+        manager->Register("priority-self-first-original.nif", {&low});
+        Require(selected("priority-self-first-original.nif") == highSelf.model,
+            "an original-model variant registered first retains its higher priority");
+
+        static auto tiedOther = MakeVariant("priority-self-tied-other.nif", "priority-self-tied-other.nif");
+        static auto tiedSelf = MakeVariant("priority-self-tied-original.nif", "priority-self-tied-original.nif");
+        tiedOther.priority = tiedSelf.priority = 2.25;
+        manager->Register("priority-self-tied-original.nif", {&tiedOther});
+        manager->Register("priority-self-tied-original.nif", {&tiedSelf});
+        const std::array<const char*, 2> tied{tiedOther.model, tiedSelf.model};
+        for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+            std::mt19937 engine(ref);
+            std::uniform_int_distribution<std::uint32_t> distribution(0, 1);
+            Require(selected("priority-self-tied-original.nif", ref) == tied[distribution(engine)],
+                "an original-model variant preserves other rules and weights in a tied original pool");
+        }
+
+        static auto aliasHigh = MakeVariant("priority-shared-alias.nif", "priority-shared-alias.nif");
+        static auto aliasLow = MakeVariant("priority-shared-alias.nif", "priority-shared-alias.nif");
+        static auto aliasLowOther = MakeVariant("priority-alias-low-other.nif", "priority-alias-low-other.nif");
+        aliasHigh.priority = 1.5;
+        manager->Register("priority-alias-high-original.nif", {&aliasHigh});
+        manager->Register("priority-alias-low-original.nif", {&aliasLow, &aliasLowOther});
+        for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+            Require(selected("priority-shared-alias.nif", ref) == aliasHigh.model,
+                "lower-priority alias registration cannot erase an existing higher-priority rule");
+        }
+
+        static auto aliasFirstLow = MakeVariant("priority-reverse-alias.nif", "priority-reverse-alias.nif");
+        static auto aliasLaterHigh = MakeVariant("priority-reverse-high.nif", "priority-reverse-alias.nif");
+        aliasLaterHigh.priority = 1.5;
+        manager->Register("priority-reverse-low-original.nif", {&aliasFirstLow});
+        manager->Register("priority-reverse-high-original.nif", {&aliasLaterHigh});
+        Require(selected("priority-reverse-alias.nif") == aliasLaterHigh.model,
+            "higher-priority alias registration wins when registered after a lower-priority rule");
+
+        static auto aliasDefault = MakeVariant("priority-default-alias.nif", "priority-default-alias.nif");
+        static auto aliasNegative = MakeVariant("priority-negative-alias.nif", "priority-default-alias.nif");
+        aliasNegative.priority = -0.5;
+        manager->Register("priority-default-alias-original.nif", {&aliasDefault});
+        manager->Register("priority-negative-alias-original.nif", {&aliasNegative});
+        Require(selected("priority-default-alias.nif") == aliasDefault.model,
+            "a later negative-priority alias cannot erase an existing default-zero rule");
+    }
+
+    void TestPriorityLoading() {
+        const auto fixtureRoot = std::filesystem::path(__FILE__).parent_path().parent_path() / "build/tests/priority-fixture";
+        std::filesystem::create_directories(fixtureRoot / "Data/SKSE/Plugins");
+        const auto previousDirectory = std::filesystem::current_path();
+        std::filesystem::current_path(fixtureRoot);
+        auto entries = json::parse(R"([
+            {"OriginalModel":"loader-priority-fraction.nif","Variants":["loader-priority-low.nif"],"Priority":1},
+            {"OriginalModel":"loader-priority-fraction.nif","Variants":["loader-priority-high.nif"],"Priority":1.5},
+            {"OriginalModel":"loader-priority-default.nif","Variants":["loader-priority-negative.nif"],"Priority":-0.5},
+            {"OriginalModel":"loader-priority-default.nif","Variants":["loader-priority-default-target.nif"]},
+            {"OriginalModel":"loader-priority-negative-only.nif","Variants":["loader-priority-negative-target.nif"],"Priority":-2},
+            {"OriginalModel":"loader-priority-tie.nif","Variants":["loader-priority-missing.nif"]},
+            {"OriginalModel":"loader-priority-tie.nif","Variants":["loader-priority-zero.nif"],"Priority":0.0}
+        ])");
+        const std::vector<json> invalid{nullptr, true, false, "2", json::array({2}), json::object({{"value", 2}})};
+        for (std::size_t i = 0; i < invalid.size(); ++i) {
+            const auto original = "loader-priority-invalid-" + std::to_string(i) + ".nif";
+            entries.push_back(json{{"OriginalModel", original}, {"Variants", json::array({"loader-priority-invalid-target.nif"})},
+                {"Priority", invalid[i]}});
+        }
+        {
+            std::ofstream fixture("Data/priority_MS.json");
+            fixture << entries;
+        }
+        {
+            std::ofstream overflow("Data/priority-overflow_MS.json");
+            overflow << R"([{"OriginalModel":"loader-priority-overflow.nif","Variants":["loader-priority-overflow-target.nif"],"Priority":1e999}])";
+        }
+        Persistence::Install();
+        const auto selected = [](const std::string& original, std::uint32_t ref = 1) {
+            RE::TESBoundObject base;
+            base.formID = 0xF410;
+            base.SetModel(original.c_str());
+            auto swap = Manager::GetSingleton()->Swap(&base, ref);
+            return std::string(base.GetModel());
+        };
+        Require(selected("loader-priority-fraction.nif") == "loader-priority-high.nif",
+            "loader accepts integer and fractional numeric priorities without truncation");
+        Require(selected("loader-priority-default.nif") == "loader-priority-default-target.nif",
+            "missing Priority defaults to zero and beats a negative fraction");
+        Require(selected("loader-priority-negative-only.nif") == "loader-priority-negative-target.nif",
+            "loader accepts negative integer priorities");
+        const std::array<const char*, 2> tied{"loader-priority-missing.nif", "loader-priority-zero.nif"};
+        for (std::uint32_t ref = 1; ref <= 64; ++ref) {
+            std::mt19937 engine(ref);
+            std::uniform_int_distribution<std::uint32_t> distribution(0, 1);
+            Require(selected("loader-priority-tie.nif", ref) == tied[distribution(engine)],
+                "missing and explicit zero Priority preserve the seeded legacy pool");
+        }
+        for (std::size_t i = 0; i < invalid.size(); ++i) {
+            const auto original = "loader-priority-invalid-" + std::to_string(i) + ".nif";
+            Require(selected(original) == original, "invalid Priority type skips its own entry");
+        }
+        Require(selected("loader-priority-overflow.nif") == "loader-priority-overflow.nif",
+            "nonfinite numeric JSON overflow is rejected without interrupting configuration loading");
+        std::filesystem::remove("Data/priority_MS.json");
+        std::filesystem::remove("Data/priority-overflow_MS.json");
+        std::filesystem::current_path(previousDirectory);
+    }
+
     void TestConfigLoading() {
         const auto fixtureRoot = std::filesystem::path(__FILE__).parent_path().parent_path() / "build/tests/loader-fixture";
         std::filesystem::create_directories(fixtureRoot / "Data/SKSE/Plugins");
@@ -1166,6 +1351,8 @@ int main() {
     TestContextCapture();
     TestSelection();
     TestIDOnlySelection();
+    TestPrioritySelection();
+    TestPriorityRegistration();
     TestLegacyManagement();
     TestExclusionManagement();
     TestSharedBaseRestoration();
@@ -1175,6 +1362,7 @@ int main() {
     TestUnchangedModelPreservation();
     TestArmorRestoration();
     TestConfigLoading();
+    TestPriorityLoading();
     TestMultipleOriginalRegistration();
     TestIDOnlyRestoration();
     TestOriginalModelLoading();
